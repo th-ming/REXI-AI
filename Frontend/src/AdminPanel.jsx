@@ -999,7 +999,7 @@ const SkillsTab = memo(function SkillsTab({ token, showToast }) {
         method: 'PUT',
         body: JSON.stringify({ trang_thai: newStatus })
       });
-      showToast(`${newStatus === 'kich_hoat' ? t(getLang(), '✅ Đã bật') : t(getLang(), '⛔ Đã tắt')}: ${skill.tieu_de || skill.ten_ky_nang}`);
+      showToast(`${newStatus === 'kich_hoat' ? t(getLang(), '✅ Đã bật') : t(getLang(), '⛔ Đã tắt')}: ${t(getLang(), skill.tieu_de || skill.ten_ky_nang)}`);
       await fetchSkills();
     } catch (e) { showToast(t(getLang(), 'Lỗi toggle skill: ') + e.message, 'error'); }
     finally { setToggling(null); }
@@ -1026,8 +1026,8 @@ const SkillsTab = memo(function SkillsTab({ token, showToast }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono">{s.ten_ky_nang}</span>
-                    <p className="text-xs font-semibold text-slate-200 mt-1.5">{s.tieu_de}</p>
-                    <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{s.mo_ta}</p>
+                    <p className="text-xs font-semibold text-slate-200 mt-1.5">{t(getLang(), s.tieu_de)}</p>
+                    <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{t(getLang(), s.mo_ta)}</p>
                   </div>
                   <button
                     onClick={() => toggleSkill(s)}

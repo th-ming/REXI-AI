@@ -22,8 +22,8 @@ export default function SkillsModal({ skillsOpen, setSkillsOpen, dbSkills }) {
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-mono">{s.ten_ky_nang}</span>
               </div>
-              <p className="text-xs font-semibold text-slate-700">{s.tieu_de}</p>
-              <p className="text-[11px] text-slate-500 mt-1">{s.mo_ta}</p>
+              <p className="text-xs font-semibold text-slate-700">{tx(getLang(), s.tieu_de)}</p>
+              <p className="text-[11px] text-slate-500 mt-1">{tx(getLang(), s.mo_ta)}</p>
             </div>
           ))}
         </div>
