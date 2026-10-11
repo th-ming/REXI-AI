@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { t, getLang } from '../i18n';
+import { stripVi } from '../strip-vi';
 import { Play, Pause, Download, Volume2, Mic, RotateCw, Loader2, Clock, Type, Hash, User, MapPin, Upload, Sparkles } from 'lucide-react';
 
 // Giọng THẬT của engine Microsoft Edge TTS (lấy đúng từ voices/list — không bịa).
@@ -462,7 +463,7 @@ export default function StudioTab({ API_BASE, authToken, showToast }) {
                   onClick={() => setText(sample.text)}
                   className="px-3 py-1.5 rounded-full bg-[var(--bg-card)] border border-white/10 text-[11px] text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 hover:bg-cyan-500/10 transition-all"
                 >
-                  {t(getLang(), sample.label)}
+                  {lang === 'en' ? stripVi(sample.label) : sample.label}
                 </button>
               ))}
             </div>
@@ -499,7 +500,7 @@ export default function StudioTab({ API_BASE, authToken, showToast }) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className={`text-[11px] font-semibold truncate ${isSelected ? vc.text : 'text-slate-300'}`}>
-                          {t(getLang(), v.label)}
+                          {lang === 'en' ? stripVi(v.label) : v.label}
                         </div>
                       </div>
                       <button
@@ -517,7 +518,7 @@ export default function StudioTab({ API_BASE, authToken, showToast }) {
                     <div className="flex items-center gap-1.5">
                       {v.gender && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${vc.bg} ${vc.text}`}>
-                          {t(getLang(), v.gender)}
+                          {t(getLang(), v.gender) && lang !== 'en' ? t(getLang(), v.gender) : (v.gender === 'Nam' ? 'Male' : v.gender === 'Nữ' ? 'Female' : v.gender)}
                         </span>
                       )}
                       {v.region && (
