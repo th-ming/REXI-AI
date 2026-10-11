@@ -375,10 +375,13 @@ select {
 [data-theme="light"] .bg-\[\#171922\] { background-color: #eef0f6; }
 [data-theme="light"] .bg-\[\#2b1845\] { background-color: #ede9fe; border-color: rgba(124,58,237,.35); }
 /* 11/10: hover surface còn sót (ChatTab quick actions, ImageGen chips) + border white fraction */
-[data-theme="light"] .hover\:bg-\[\#222325\]:hover { background-color: #f4f6fb; }
+[data-theme="light"] .hover\:bg-\[\#222325\]:hover { background-color: #e9edf5; }
 [data-theme="light"] .hover\:bg-\[\#31343a\]:hover { background-color: #e8ebf3; }
-[data-theme="light"] .border-white\/\[0\.06\] { border-color: rgba(26,32,51,.08); }
-[data-theme="light"] .hover\:border-white\/\[0\.14\]:hover { border-color: rgba(26,32,51,.16); }
+[data-theme="light"] .border-white\/\[0\.06\] { border-color: rgba(26,32,51,.1); }
+[data-theme="light"] .border-white\/\[0\.08\] { border-color: rgba(26,32,51,.12); }
+[data-theme="light"] .hover\:border-white\/\[0\.14\]:hover { border-color: rgba(47,98,232,.45); }
+[data-theme="light"] .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(26,32,51,.08); }
+[data-theme="light"] .rexi-pill:hover { border-color: rgba(26,32,51,.26); }
 [data-theme="light"] .placeholder-slate-400::placeholder { color: #8a91a3; }
 [data-theme="light"] .placeholder\:text-slate-500::placeholder { color: #8a91a3; }
 [data-theme="light"] .bg-gray-500\/20 { background-color: rgba(107,114,128,.12); }

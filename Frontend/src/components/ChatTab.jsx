@@ -103,7 +103,7 @@ export default function ChatTab({
           {messages.length === 0 ? (
             <div className="relative h-full flex flex-col items-center justify-center px-4 py-6 overflow-hidden">
               <div className="relative z-10 w-full max-w-3xl flex flex-col items-center">
-                <div className="flex flex-col items-center text-center mb-6">
+                <div className="flex flex-col items-center text-center mb-6 rexi-rise">
                   <img src="/rexi_cat_icon.png" alt="Rexi" className="rexi-logo w-12 h-12 object-contain mb-3" />
                   <h2 className="text-xl sm:text-2xl font-bold text-slate-100">
                     {t(lang, 'welcomeGreeting').replace('{name}', currentUser?.ten_day_du || (lang === 'en' ? 'there' : 'bạn'))}
@@ -112,11 +112,12 @@ export default function ChatTab({
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 w-full">
-                  {FEATURED_ACTIONS.map((a) => (
+                  {FEATURED_ACTIONS.map((a, i) => (
                     <button
                       key={a.tab}
                       onClick={() => onOpenFeature?.(a.tab)}
-                      className="group flex items-center gap-3 text-left rounded-xl p-3 bg-[#1e1f20] border border-white/[0.06] hover:border-white/[0.14] hover:bg-[#222325] transition-colors duration-150"
+                      style={{ animationDelay: `${80 + i * 55}ms` }}
+                      className="rexi-rise group flex items-center gap-3 text-left rounded-xl p-3 bg-[#1e1f20] border border-white/[0.06] hover:border-white/[0.14] hover:bg-[#222325] transition-colors duration-150"
                     >
                       <span className={`inline-flex items-center justify-center w-10 h-10 rounded-lg border shrink-0 ${a.box || 'border-white/[0.08] bg-white/[0.04]'} ${a.color || 'text-slate-300'}`}>
                         {a.icon}
@@ -130,11 +131,12 @@ export default function ChatTab({
                 </div>
 
                 <div className="rexi-scroll flex gap-2 w-full overflow-x-auto px-1 py-1 mt-3.5">
-                  {EXTRA_ACTIONS.map((x) => (
+                  {EXTRA_ACTIONS.map((x, i) => (
                     <button
                       key={x.tab}
                       onClick={() => onOpenFeature?.(x.tab)}
-                      className="rexi-pill inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] text-slate-300 hover:text-white"
+                      style={{ animationDelay: `${410 + i * 45}ms` }}
+                      className="rexi-rise rexi-pill inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] text-slate-300 hover:text-white"
                     >
                       <span className={x.color || 'text-slate-400'}>{x.icon}</span>{t(lang, x.labelKey)}
                     </button>
