@@ -239,17 +239,17 @@ select {
   --bg-sidebar: #ffffff;
   --bg-card: #ffffff;
   --bg-card-hover: #eef1f7;
-  --accent: #2f5fd0;
-  --accent-deep: #20439f;
-  --accent-gradient: linear-gradient(135deg, #2f5fd0, #2f5fd0);
+  --accent: #2f62e8;
+  --accent-deep: #2349b8;
+  --accent-gradient: linear-gradient(135deg, #2f62e8, #2f62e8);
   --text-main: #17191d;
   --text-sub: #5b6169;
   --border-color: rgba(17, 19, 22, 0.1);
-  /* Bảng màu chuyên nghiệp — 1 accent + semantic tiết chế */
-  --c-accent-soft: #6b86d8; --c-accent-base: #2f5fd0; --c-accent-strong: #20439f;
-  --c-ok-soft: #3f9d72; --c-ok-base: #1f7a52; --c-ok-strong: #155c3d;
-  --c-danger-soft: #d97575; --c-danger-base: #c0392b; --c-danger-strong: #8f241c;
-  --c-warn-soft: #b8801f; --c-warn-base: #95660f; --c-warn-strong: #6f4c08;
+  /* Bảng màu chuyên nghiệp — 1 accent + semantic tiết chế (vivid như dark, vẫn đọc được trên nền sáng) */
+  --c-accent-soft: #7d9bff; --c-accent-base: #2f62e8; --c-accent-strong: #2349b8;
+  --c-ok-soft: #34d399; --c-ok-base: #059669; --c-ok-strong: #047857;
+  --c-danger-soft: #f87171; --c-danger-base: #dc2626; --c-danger-strong: #b91c1c;
+  --c-warn-soft: #fbbf24; --c-warn-base: #d97706; --c-warn-strong: #b45309;
   --ease-out: cubic-bezier(.23,1,.32,1);
   color-scheme: light;
 }
@@ -286,35 +286,37 @@ select {
 [data-theme="light"] .rexi-logo:hover { filter: brightness(0); }
 [data-theme="light"] .rexi-logo-no-glow { filter: brightness(0) !important; }
 
-/* Chữ màu pastel (200/300/400) → shade mực đậm đọc được trên nền trắng (ScrapePanel + dùng chung) */
-[data-theme="light"] .text-cyan-200 { color: #2f5fd0; }
-[data-theme="light"] .text-cyan-300 { color: #2f5fd0; }
-[data-theme="light"] .text-cyan-400 { color: #20439f; }
-[data-theme="light"] .text-rose-300 { color: #c0392b; }
-[data-theme="light"] .text-rose-400 { color: #8f241c; }
-[data-theme="light"] .text-sky-300 { color: #1c5fa8; }
-[data-theme="light"] .text-sky-400 { color: #155a9e; }
-[data-theme="light"] .text-red-400 { color: #9c221a; }
-[data-theme="light"] .text-fuchsia-400 { color: #83246a; }
-[data-theme="light"] .text-amber-300 { color: #95660f; }
-[data-theme="light"] .text-amber-400 { color: #6f4c08; }
-[data-theme="light"] .text-emerald-200 { color: #1f7a52; }
-[data-theme="light"] .text-emerald-300 { color: #1f7a52; }
-[data-theme="light"] .text-emerald-400 { color: #155c3d; }
-[data-theme="light"] .text-violet-200 { color: #5b3fa8; }
-[data-theme="light"] .text-violet-300 { color: #5b3fa8; }
-[data-theme="light"] .text-violet-400 { color: #47308a; }
-[data-theme="light"] .text-fuchsia-300 { color: #9a2f7a; }
-[data-theme="light"] .text-teal-300 { color: #116b63; }
-[data-theme="light"] .text-orange-300 { color: #9a5b13; }
-[data-theme="light"] .text-red-300 { color: #c0392b; }
+/* Chữ màu pastel (200/300/400) → shade tươi như dark mode nhưng đủ tương phản trên nền trắng.
+   Trước đây remap về mực đậm (navy #20439f, nâu #6f4c08…) làm icon/chip xỉn màu,
+   light mode nhìn xám xịt so với dark. Nay dùng tailwind-600: vivid + ≥3:1 trên nền trắng. */
+[data-theme="light"] .text-cyan-200 { color: #0891b2; }
+[data-theme="light"] .text-cyan-300 { color: #0891b2; }
+[data-theme="light"] .text-cyan-400 { color: #0891b2; }
+[data-theme="light"] .text-rose-300 { color: #e11d48; }
+[data-theme="light"] .text-rose-400 { color: #e11d48; }
+[data-theme="light"] .text-sky-300 { color: #0284c7; }
+[data-theme="light"] .text-sky-400 { color: #0284c7; }
+[data-theme="light"] .text-red-400 { color: #dc2626; }
+[data-theme="light"] .text-fuchsia-400 { color: #c026d3; }
+[data-theme="light"] .text-amber-300 { color: #d97706; }
+[data-theme="light"] .text-amber-400 { color: #d97706; }
+[data-theme="light"] .text-emerald-200 { color: #059669; }
+[data-theme="light"] .text-emerald-300 { color: #059669; }
+[data-theme="light"] .text-emerald-400 { color: #059669; }
+[data-theme="light"] .text-violet-200 { color: #7c3aed; }
+[data-theme="light"] .text-violet-300 { color: #7c3aed; }
+[data-theme="light"] .text-violet-400 { color: #7c3aed; }
+[data-theme="light"] .text-fuchsia-300 { color: #c026d3; }
+[data-theme="light"] .text-teal-300 { color: #0d9488; }
+[data-theme="light"] .text-orange-300 { color: #ea580c; }
+[data-theme="light"] .text-red-300 { color: #dc2626; }
 /* Tint nền white/x nhạt → mực nhạt */
 [data-theme="light"] .bg-white\/\[0\.02\] { background-color: rgba(26,32,51,.03); }
 [data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(26,32,51,.04); }
 [data-theme="light"] .bg-white\/\[0\.04\] { background-color: rgba(26,32,51,.05); }
-[data-theme="light"] .bg-cyan-500\/15 { background-color: rgba(47,95,208,.10); }
-[data-theme="light"] .bg-violet-500\/15 { background-color: rgba(91,63,168,.10); }
-[data-theme="light"] .bg-violet-500\/5 { background-color: rgba(91,63,168,.05); }
+[data-theme="light"] .bg-cyan-500\/15 { background-color: rgba(8,145,178,.12); }
+[data-theme="light"] .bg-violet-500\/15 { background-color: rgba(124,58,237,.12); }
+[data-theme="light"] .bg-violet-500\/5 { background-color: rgba(124,58,237,.06); }
 [data-theme="light"] .divide-white\/5 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(26,32,51,.1); }
 [data-theme="light"] .divide-white\/10 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(26,32,51,.14); }
 
@@ -361,6 +363,11 @@ select {
 [data-theme="light"] .bg-\[\#16171d\] { background-color: #ffffff; }
 [data-theme="light"] .bg-\[\#171922\] { background-color: #eef0f6; }
 [data-theme="light"] .bg-\[\#2b1845\] { background-color: #ede9fe; border-color: rgba(124,58,237,.35); }
+/* 11/10: hover surface còn sót (ChatTab quick actions, ImageGen chips) + border white fraction */
+[data-theme="light"] .hover\:bg-\[\#222325\]:hover { background-color: #f4f6fb; }
+[data-theme="light"] .hover\:bg-\[\#31343a\]:hover { background-color: #e8ebf3; }
+[data-theme="light"] .border-white\/\[0\.06\] { border-color: rgba(26,32,51,.08); }
+[data-theme="light"] .hover\:border-white\/\[0\.14\]:hover { border-color: rgba(26,32,51,.16); }
 [data-theme="light"] .placeholder-slate-400::placeholder { color: #8a91a3; }
 [data-theme="light"] .placeholder\:text-slate-500::placeholder { color: #8a91a3; }
 [data-theme="light"] .bg-gray-500\/20 { background-color: rgba(107,114,128,.12); }
