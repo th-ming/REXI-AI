@@ -999,7 +999,7 @@ const SkillsTab = memo(function SkillsTab({ token, showToast }) {
         method: 'PUT',
         body: JSON.stringify({ trang_thai: newStatus })
       });
-      showToast(`${newStatus === 'kich_hoat' ? t(getLang(), '✅ Đã bật') : t(getLang(), '⛔ Đã tắt')}: ${t(getLang(), skill.tieu_de || skill.ten_ky_nang)}`);
+      showToast(`${newStatus === 'kich_hoat' ? t(getLang(), '✅ Đã bật') : t(getLang(), '⛔ Đã tắt')}: ${t(getLang(), t(getLang(), skill.tieu_de || skill.ten_ky_nang))}`);
       await fetchSkills();
     } catch (e) { showToast(t(getLang(), 'Lỗi toggle skill: ') + e.message, 'error'); }
     finally { setToggling(null); }
