@@ -35,14 +35,26 @@ function EnsureVieNeu {
     Log 'VieNeu: FAILED to start'
 }
 
+function WorkerHealthy {
+    try {
+        $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8787/health' -UseBasicParsing -TimeoutSec 8
+        return ($r.StatusCode -eq 200)
+    } catch { return $false }
+}
+
 function EnsureWorker {
-    if (PortUp 8787) { return }
-    Log 'YTDLP worker: not listening -> starting'
+    if ((PortUp 8787) -and (WorkerHealthy)) { return }
+    if (PortUp 8787) {
+        Log 'YTDLP worker: port open but UNHEALTHY -> kill + restart'
+        Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'ytdlp-worker' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Get-Process yt-dlp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep 2
+    } else { Log 'YTDLP worker: not listening -> starting' }
     $env:PORT = '8787'; $env:WORKER_TOKEN = 'rexi-ytdlp-2026'; $env:COOKIES_FILE = $cookies
     Start-Process -FilePath $nodeexe -ArgumentList $ytjs -WorkingDirectory $ytdir -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $tundir 'ytdlp.out.log') -RedirectStandardError (Join-Path $tundir 'ytdlp.err.log')
-    for ($i=0; $i -lt 15; $i++) { if (PortUp 8787) { Log 'YTDLP worker: up'; return }; Start-Sleep 2 }
-    Log 'YTDLP worker: FAILED to start'
+    for ($i=0; $i -lt 20; $i++) { if ((PortUp 8787) -and (WorkerHealthy)) { Log 'YTDLP worker: up + healthy'; return }; Start-Sleep 2 }
+    Log 'YTDLP worker: FAILED to become healthy'
 }
 
 function EnsureVideoWorker {
