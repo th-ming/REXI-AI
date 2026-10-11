@@ -22,9 +22,15 @@ const quotaManager = require('../services/quotaManager');
 const telemetry = require('../services/telemetry');
 // ─── Helper: lấy API key xKiro từ DB qua adapter (SQLite local / PG trên Render) ───
 function getXkiroApiKey() {
+  return getProviderApiKey('xkiro');
+}
+// ─── Helper chung: lấy API key bất kỳ provider nào (env trước, khoa_api sau) ───
+function getProviderApiKey(prov) {
   return new Promise((resolve) => {
-    if (process.env.XKIRO_API_KEY) return resolve(process.env.XKIRO_API_KEY.trim());
-    db.get("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = 'xkiro'", [], (err, row) => {
+    const p = String(prov || '').toLowerCase();
+    const envHit = process.env[p.toUpperCase() + '_API_KEY'] || process.env['REXI_' + p.toUpperCase() + '_KEY'];
+    if (envHit && envHit.trim()) return resolve(envHit.trim());
+    db.get("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = ?", [p], (err, row) => {
       if (err || !row || !row.gia_tri_khoa) return resolve('');
       try { resolve(decryptKey(row.gia_tri_khoa).trim()); }
       catch (de) { resolve(String(row.gia_tri_khoa).trim()); }
@@ -818,18 +824,25 @@ router.post('/conversations/:id/messages', rateLimit({ windowMs: 60000, max: 60 
 
         const rootDir = path.join(__dirname, '..', '..', '..');
 
-        // Nếu dùng dsh → lấy XKIRO_API_KEY (sqlite3 trực tiếp — db adapter bị treo)
+        // Nếu dùng dsh → resolve provider theo model user chọn (như opencode -m),
+        // key lấy từ khoa_api qua env REXI_<PROV>_KEY (giữ XKIRO_API_KEY cho settings.yaml cũ)
         let extraEnv = {};
+        let dshProv = '';
         if (agentEngineName === 'dsh') {
-          extraEnv.XKIRO_API_KEY = await getXkiroApiKey();
-          if (!extraEnv.XKIRO_API_KEY) {
-            const errorMessage = "⚠️ **Lỗi:** Chưa có API key xKiro trong hệ thống. Admin cần lưu key provider `xkiro` trước khi dùng Agent DSH.";
+          dshProv = await agentEngine.resolveDshProvider(model_name, provider);
+          const provKey = await getProviderApiKey(dshProv);
+          if (provKey) {
+            extraEnv[agentEngine.dshKeyEnvName(dshProv)] = provKey;
+            if (dshProv === 'xkiro') extraEnv.XKIRO_API_KEY = provKey;
+          }
+          if (!provKey) {
+            const errorMessage = `⚠️ **Lỗi:** Chưa có API key provider \`${dshProv}\` trong hệ thống. Admin cần lưu key provider này trước khi dùng Agent DSH.`;
             return saveAIMessageAndRespond(id, errorMessage, res);
           }
         }
 
         // Chạy agent engine (opencode hoặc dsh) — đọc/sửa file, chạy lệnh trong rootDir
-        const result = await agentEngine.runAgentEngine(agentEngineName, noi_dung, model_name, rootDir, extraEnv);
+        const result = await agentEngine.runAgentEngine(agentEngineName, noi_dung, model_name, rootDir, extraEnv, dshProv);
 
         let cauTraLoiAgent = "";
         if (result.code !== 0) {
@@ -1624,12 +1637,18 @@ router.post('/conversations/:id/messages/stream', rateLimit({ windowMs: 60000, m
 
     const rootDir = path.join(__dirname, '..', '..', '..');
 
-    // dsh cần XKIRO_API_KEY làm credential — đọc key qua sqlite3 trực tiếp (db adapter bị treo)
+    // dsh cần key đúng provider user chọn — đọc qua adapter (như endpoint messages)
     let extraEnv = {};
+    let dshProv = '';
     if (agentEngineName === 'dsh') {
-      extraEnv.XKIRO_API_KEY = await getXkiroApiKey();
-      if (!extraEnv.XKIRO_API_KEY) {
-        sendSSE({ type: 'error', message: "⚠️ **Lỗi:** Chưa có API key xKiro trong hệ thống. Admin cần lưu key provider `xkiro` trước khi dùng Agent DSH." });
+      dshProv = await agentEngine.resolveDshProvider(model_name, provider);
+      const provKey = await getProviderApiKey(dshProv);
+      if (provKey) {
+        extraEnv[agentEngine.dshKeyEnvName(dshProv)] = provKey;
+        if (dshProv === 'xkiro') extraEnv.XKIRO_API_KEY = provKey;
+      }
+      if (!provKey) {
+        sendSSE({ type: 'error', message: `⚠️ **Lỗi:** Chưa có API key provider \`${dshProv}\` trong hệ thống. Admin cần lưu key provider này trước khi dùng Agent DSH.` });
         return endStream();
       }
     }
@@ -1639,7 +1658,7 @@ router.post('/conversations/:id/messages/stream', rateLimit({ windowMs: 60000, m
       : '🤖 Đang khởi động Agent (opencode)... Vui lòng đợi, agent có thể mất 1–5 phút tùy tác vụ.' });
 
     console.log('[Agent-DSH] goi runAgentEngineStream, bin =', agentEngine.DSH_BIN);
-    const killAgent = agentEngine.runAgentEngineStream(agentEngineName, noi_dung, model_name, rootDir, extraEnv, sendSSE, endStream);
+    const killAgent = agentEngine.runAgentEngineStream(agentEngineName, noi_dung, model_name, rootDir, extraEnv, sendSSE, endStream, dshProv);
     console.log('[Agent-DSH] da spawn xong');
     // Client ngắt kết nối → kill agent
     req.on('close', () => { try { killAgent(); } catch (e) {} });

@@ -1,4 +1,4 @@
 - id: agent-default-model
   config:
     provider: xkiro
-    model: deepseek/deepseek-v4-pro
+    model: mistralai/mistral-small-2603
