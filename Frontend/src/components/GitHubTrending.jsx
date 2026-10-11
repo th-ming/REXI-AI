@@ -84,7 +84,7 @@ function RepoCard({ repo, index, isStarred, onStarRepo, starringKey, speakingKey
           {/* Rank + Name */}
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[10px] font-bold text-slate-500 w-5 text-right">#{repo.rank || index + 1}</span>
-            <button onClick={() => onOpenDetail(repo)} title={t(lang, 'tipDetail')}
+            <button onClick={() => onOpenDetail(repo)} title={t(getLang(), 'tipDetail')}
               className="text-sm font-semibold text-cyan-400 hover:text-cyan-300 truncate flex items-center gap-1.5 transition-colors text-left">
               <GithubIcon size={13} className="shrink-0" />
               {repo.full_name}
@@ -137,7 +137,7 @@ function RepoCard({ repo, index, isStarred, onStarRepo, starringKey, speakingKey
               <button
                 onClick={() => onStarRepo(repo)}
                 disabled={starringKey === repo.full_name}
-                title={isStarred ? (lang === 'vi' ? 'Bỏ star' : 'Unstar') : (lang === 'vi' ? 'Star repo này' : 'Star this repo')}
+                title={isStarred ? (getLang() === 'vi' ? 'Bỏ star' : 'Unstar') : (getLang() === 'vi' ? 'Star repo này' : 'Star this repo')}
                 className={`p-0.5 rounded transition-all ${
                   isStarred
                     ? 'text-yellow-300 hover:text-yellow-200'
@@ -201,7 +201,7 @@ function RepoCard({ repo, index, isStarred, onStarRepo, starringKey, speakingKey
           {/* TTS Button */}
           <button
             onClick={() => onSpeak(repo)}
-            title={isSpeaking ? (lang === 'vi' ? 'Dừng đọc' : 'Stop reading') : (lang === 'vi' ? 'Đọc mô tả repo' : 'Read repo description')}
+            title={isSpeaking ? (getLang() === 'vi' ? 'Dừng đọc' : 'Stop reading') : (getLang() === 'vi' ? 'Đọc mô tả repo' : 'Read repo description')}
             className={`p-2 rounded-lg border transition-all flex items-center justify-center ${
               isSpeaking
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 animate-pulse'
@@ -215,7 +215,7 @@ function RepoCard({ repo, index, isStarred, onStarRepo, starringKey, speakingKey
           <button
             onClick={() => onStarRepo(repo)}
             disabled={starringKey === repo.full_name}
-            title={isStarred ? (lang === 'vi' ? 'Bỏ star trên GitHub' : 'Unstar on GitHub') : (lang === 'vi' ? 'Star trên GitHub' : 'Star on GitHub')}
+            title={isStarred ? (getLang() === 'vi' ? 'Bỏ star trên GitHub' : 'Unstar on GitHub') : (getLang() === 'vi' ? 'Star trên GitHub' : 'Star on GitHub')}
             className={`p-2 rounded-lg border transition-all disabled:opacity-40 flex items-center justify-center ${
               isStarred
                 ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30 hover:bg-yellow-500/30'

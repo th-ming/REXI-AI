@@ -17,17 +17,17 @@ export default function OpenCutTab({ authToken, showToast }) {
       {loading && !error && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 pointer-events-none">
           <Loader2 size={22} className="text-cyan-500 animate-spin" />
-          <p className="text-xs text-slate-500">{tx(lang, 'Đang tải OpenCut...')}</p>
+          <p className="text-xs text-slate-500">{tx(getLang(), 'Đang tải OpenCut...')}</p>
         </div>
       )}
       {error && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center p-6">
-          <p className="text-sm text-slate-300">{tx(lang, 'Không tải được OpenCut.')}</p>
+          <p className="text-sm text-slate-300">{tx(getLang(), 'Không tải được OpenCut.')}</p>
           <button
             onClick={reload}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/15 border border-cyan-500/40 text-cyan-200 text-xs font-semibold hover:bg-cyan-500/25 transition-all"
           >
-            <RefreshCw size={13} /> {tx(lang, 'Thử lại')}
+            <RefreshCw size={13} /> {tx(getLang(), 'Thử lại')}
           </button>
         </div>
       )}
@@ -117,9 +117,9 @@ function AgentBridgePanel({ token, showToast }) {
           <Bot size={15} className="text-cyan-300 shrink-0" />
           <span className="text-[12.5px] font-semibold text-slate-100 flex-1">OpenCut Agent</span>
           {connected ? (
-            <span className="inline-flex items-center gap-1 text-[10.5px] text-emerald-300"><Wifi size={12} />{tx(lang, 'đã nối')}</span>
+            <span className="inline-flex items-center gap-1 text-[10.5px] text-emerald-300"><Wifi size={12} />{tx(getLang(), 'đã nối')}</span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-500"><WifiOff size={12} />{tx(lang, 'chưa nối')}</span>
+            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-500"><WifiOff size={12} />{tx(getLang(), 'chưa nối')}</span>
           )}
           <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`} />
         </button>
@@ -127,9 +127,9 @@ function AgentBridgePanel({ token, showToast }) {
         {open && (
           <div className="px-3.5 pb-3.5">
             <p className="text-[10.5px] text-slate-500 mb-2 leading-relaxed">
-              {!token ? tx(lang, 'Cần đăng nhập.')
-                : connected ? (hasTab ? tx(lang, 'Extension OK + có tab OpenCut. Nhập việc cần agent làm:') : tx(lang, 'Extension OK nhưng chưa thấy tab opencut.app — hãy mở opencut.app.'))
-                : tx(lang, 'Chưa thấy extension. Cài "Rexi OpenCut Bridge" (Load unpacked) + mở opencut.app.')}
+              {!token ? tx(getLang(), 'Cần đăng nhập.')
+                : connected ? (hasTab ? tx(getLang(), 'Extension OK + có tab OpenCut. Nhập việc cần agent làm:') : tx(getLang(), 'Extension OK nhưng chưa thấy tab opencut.app — hãy mở opencut.app.'))
+                : tx(getLang(), 'Chưa thấy extension. Cài "Rexi OpenCut Bridge" (Load unpacked) + mở opencut.app.')}
             </p>
             <textarea
               ref={taRef}
@@ -137,7 +137,7 @@ function AgentBridgePanel({ token, showToast }) {
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
               rows={2}
-              placeholder={t(lang, 'phOpencut')}
+              placeholder={t(getLang(), 'phOpencut')}
               className="w-full resize-none rounded-lg bg-black/30 border border-white/10 text-[12px] text-slate-100 px-2.5 py-2 focus:outline-none focus:border-cyan-400/50 placeholder:text-slate-600"
             />
             <div className="flex items-center gap-2 mt-2">
@@ -153,7 +153,7 @@ function AgentBridgePanel({ token, showToast }) {
                 disabled={shotBusy}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-slate-200 text-[11.5px] font-semibold hover:bg-white/10 disabled:opacity-40 transition-all"
               >
-                {shotBusy ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />} {tx(lang, 'Chụp')}
+                {shotBusy ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />} {tx(getLang(), 'Chụp')}
               </button>
             </div>
             {log && (
