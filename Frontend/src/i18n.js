@@ -1429,6 +1429,24 @@ Object.assign(translations.en, {
   "Render MP4": "Render MP4"
 });
 
+// SWEEP-EN-MAP:Batch8
+Object.assign(translations.en, {
+  "Adam bựa": "Adam (Playful)",
+  "Trúc Ly": "Truc Ly",
+  "Anh Khôi": "Anh Khoi",
+  "Minh Quân Pro": "Minh Quan Pro",
+  "Thùy Dung": "Thuy Dung",
+  "Thiền Tâm Đức": "Thien Tam Duc",
+  "Ngọc Huyền": "Ngoc Huyen",
+  "Quang Sơn": "Quang Son",
+  "Ngọc Trân": "Ngoc Tran",
+  "Minh Đức": "Minh Duc",
+  "Phạm Tuyên": "Pham Tuyen",
+  "Thái Sơn": "Thai Son",
+  "HoaiMy (Nữ) · vi-VN": "HoaiMy (Female) · vi-VN",
+  "NamMinh (Nam) · vi-VN": "NamMinh (Male) · vi-VN"
+});
+
 export function getLang() {
   try { return localStorage.getItem('rexi_lang') || 'vi'; } catch (e) { return 'vi'; }
 }

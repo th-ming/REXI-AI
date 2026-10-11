@@ -53,7 +53,7 @@ const BACKEND_EN_PREFIX = [
   ['Chưa có dữ liệu scan', 'No scan data yet. Press "Scan channels" to start.'],
 ];
 
-function backendMsg(msg) {
+export function backendMsg(msg) {
   if (!msg || typeof window === 'undefined') return msg;
   let lang = 'vi';
   try { lang = localStorage.getItem('rexi_lang') || 'vi'; } catch (e) { /* ignore */ }
@@ -138,3 +138,25 @@ export async function apiFetchPublic(path, options = {}) {
   if (!res.ok) throw new Error(backendMsg(data.error) || `HTTP ${res.status}`);
   return data;
 }
+// Dịch error/message từ backend cho MỌI raw fetch site (51 chỗ) — patch 1 lần, phủ toàn app.
+;(function patchFetchForI18n() {
+  if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
+  if (window.__rexiI18nFetch) return;
+  const orig = window.fetch.bind(window);
+  window.fetch = async function (...args) {
+    const res = await orig(...args);
+    const origJson = res.json.bind(res);
+    res.json = async function () {
+      const data = await origJson();
+      try {
+        if (data && typeof data === 'object') {
+          if (typeof data.error === 'string') data.error = backendMsg(data.error);
+          if (typeof data.message === 'string' && !/^[a-z_]+$/.test(data.message)) data.message = backendMsg(data.message);
+        }
+      } catch (e) { /* ignore */ }
+      return data;
+    };
+    return res;
+  };
+  window.__rexiI18nFetch = true;
+})();
