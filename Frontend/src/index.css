@@ -254,6 +254,14 @@ select {
   color-scheme: light;
 }
 
+/* Cross-fade khi đổi theme (App.jsx gắn class theme-anim ~450ms) */
+.theme-anim, .theme-anim *, .theme-anim *::before, .theme-anim *::after {
+  transition: background-color .3s ease, color .3s ease, border-color .3s ease, fill .3s ease, stroke .3s ease, box-shadow .3s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-anim, .theme-anim *, .theme-anim *::before, .theme-anim *::after { transition: none !important; }
+}
+
 /* Remap các utility tối hardcode → light (khỏi sửa 15 files) */
 [data-theme="light"] .text-slate-500 { color: #8a91a3; }
 [data-theme="light"] .text-slate-400 { color: #5b6470; }

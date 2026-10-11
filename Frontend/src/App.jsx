@@ -767,6 +767,12 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('rexi_theme_v2', currentTheme);
+    // Cross-fade khi đổi theme: bật transition màu 400ms rồi gỡ (tránh ảnh hưởng animation khác)
+    try {
+      document.documentElement.classList.add('theme-anim');
+      const t = setTimeout(() => document.documentElement.classList.remove('theme-anim'), 450);
+      return () => { clearTimeout(t); document.documentElement.classList.remove('theme-anim'); };
+    } catch (e) { /* ignore */ }
   }, [currentTheme]);
 
   // Đóng FAB menu overlay khi đổi tab
