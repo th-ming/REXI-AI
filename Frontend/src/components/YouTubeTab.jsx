@@ -1021,7 +1021,7 @@ showToast, active }) {
                         <img src={c.avatar} alt={c.author} loading="lazy" className="w-8 h-8 rounded-full object-cover shrink-0" />
                       ) : (
                         <span className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                          {String(c.author || 'Ẩ').trim().charAt(0).toUpperCase()}
+                          {String(c.author || (getLang() === 'en' ? 'A' : 'Ẩ')).trim().charAt(0).toUpperCase()}
                         </span>
                       )}
                       <div className="min-w-0">

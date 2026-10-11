@@ -547,7 +547,7 @@ export default function IPTVTab({
                   'bg-white/30'
                 }`}></span>
                 <span className="truncate" title={subtitleError || undefined}>
-                  {subtitleStatus === 'listening' ? 'Đang nghe...' :
+                  {subtitleStatus === 'listening' ? t(lang, 'Đang nghe...') :
                    subtitleStatus === 'error' ? (subtitleError || t(lang, 'Lỗi microphone')) :
                    subtitleStatus === 'unsupported' ? (subtitleError || t(lang, 'Trình duyệt không hỗ trợ')) :
                    t(lang, 'Đang khởi động...')}

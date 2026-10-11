@@ -726,7 +726,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                     }`}
                   >
                     <Icon size={12} />
-                    {c.label}
+                    {T(getLang(), c.label)}
                   </button>
                 );
               })}
@@ -886,7 +886,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                      className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff] text-white font-bold text-sm shadow-lg shadow-[4a7dff]/20 disabled:opacity-50 transition-all flex items-center gap-2 active:scale-95"
                    >
                      {rendering ? <Loader2 size={16} className="animate-spin" /> : <Video size={16} />}
-                     {rendering ? 'Đang render...' : 'Render MP4'}
+                     {rendering ? T(getLang(), 'Đang render...') : T(getLang(), 'Render MP4')}
                    </button>
                  </div>
                )}

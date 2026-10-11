@@ -1415,6 +1415,20 @@ Object.assign(translations.en, {
   "Lưu Key": "Save Key"
 });
 
+// SWEEP-EN-MAP:Batch6b
+Object.assign(translations.en, {
+  "Đang nghe...": "Listening...",
+  "Tốc độ": "Speed",
+  "Đang clone...": "Cloning...",
+  "Đang render...": "Rendering..."
+});
+
+// SWEEP-EN-MAP:Batch7a
+Object.assign(translations.en, {
+  "Tạo video AI": "Create AI video",
+  "Render MP4": "Render MP4"
+});
+
 export function getLang() {
   try { return localStorage.getItem('rexi_lang') || 'vi'; } catch (e) { return 'vi'; }
 }

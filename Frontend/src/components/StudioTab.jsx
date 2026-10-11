@@ -535,7 +535,7 @@ export default function StudioTab({ API_BASE, authToken, showToast }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-500">Tốc độ</label>
+                <label className="text-xs font-semibold text-slate-500">{t(getLang(), 'Tốc độ')}</label>
                 <span className="text-[11px] text-cyan-300 font-mono bg-cyan-500/10 px-2 py-0.5 rounded-md">{formatRate(rate)}</span>
               </div>
               <input type="range" min={-50} max={50} value={rate} onChange={e => setRate(parseInt(e.target.value))}
@@ -658,7 +658,7 @@ export default function StudioTab({ API_BASE, authToken, showToast }) {
                     className="w-full py-3 rounded-xl bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-300 font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-fuchsia-500/30 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                   >
                     {cloneLoading ? (
-                      <><Loader2 size={14} className="animate-spin" /> Đang clone...</>
+                      <><Loader2 size={14} className="animate-spin" /> {t(getLang(), 'Đang clone...')}</>
                     ) : (
                       <><Sparkles size={14} /> {t(getLang(), 'Clone & Đọc thử')}</>
                     )}

@@ -9,6 +9,62 @@
 export const API_BASE = '/api';
 
 /**
+ * Dịch message lỗi từ backend (mặc định tiếng Việt) sang EN khi UI đang chế độ English.
+ * Gọi tập trung trong apiFetch/apiFetchPublic nên mọi call site đều được phủ.
+ */
+const BACKEND_EN = {
+  'Yêu cầu đăng nhập.': 'Please sign in.',
+  'ID không hợp lệ': 'Invalid ID',
+  'Không có quyền truy cập cuộc hội thoại này.': 'You do not have access to this conversation.',
+  'URL/ID video không hợp lệ (chỉ hỗ trợ YouTube).': 'Invalid video URL/ID (YouTube only).',
+  'URL/ID video không hợp lệ.': 'Invalid video URL/ID.',
+  'Cần nhập tên kênh và URL': 'Channel name and URL are required.',
+  'Kênh với URL này đã tồn tại': 'A channel with this URL already exists.',
+  'Không tìm thấy kênh': 'Channel not found.',
+  'Thiếu message': 'Missing message.',
+  'Thiếu URL': 'Missing URL.',
+  'Thiếu HTML': 'Missing HTML.',
+  'Tài khoản hoặc mật khẩu không đúng.': 'Incorrect email or password.',
+  'Credential Google không hợp lệ.': 'Invalid Google credentials.',
+  'Không tìm thấy cuộc hội thoại.': 'Conversation not found.',
+  'Không có quyền ghim cuộc hội thoại này.': 'You cannot pin this conversation.',
+  'Không tìm thấy model nào từ link API này.': 'No models found at this API link.',
+  'Lỗi quét model: ': 'Model scan error: ',
+  'Không tìm thấy mẫu giọng.': 'Voice sample not found.',
+  'VieNeu clone trả audio rỗng': 'VieNeu returned empty audio.',
+  'Bình luận trống.': 'Comment is empty.',
+  'Path không hợp lệ (path traversal detected)': 'Invalid path (path traversal detected).',
+  'Lỗi CSDL': 'Database error.',
+  'Tài khoản của bạn đã bị khoá.': 'Your account has been locked.',
+  'Phiên đã đăng xuất trên thiết bị này.': 'This device has been signed out.',
+  'Token không hợp lệ hoặc đã hết hạn.': 'Invalid or expired token.',
+  'Bạn không có quyền thực hiện hành động này.': 'You do not have permission for this action.',
+  'Hoạt động tốt': 'OK',
+  'worker lỗi': 'worker error',
+  'lỗi ingest': 'ingest error',
+  'lỗi': 'error',
+};
+const BACKEND_EN_PREFIX = [
+  ['Bạn đã dùng hết 10 tin nhắn', 'You have used all 10 guest messages. Please sign in to keep chatting.'],
+  ['Bạn đã hết lượt chat', 'You have used all 10 guest messages. Please sign in to keep chatting.'],
+  ['Bạn đã dùng hết 3 ', 'You have used all 3 guest Agent turns. Please sign in for unlimited Agent Mode.'],
+  ['Bạn đã hết lượt Agent', 'You have used all 3 guest Agent turns. Please sign in for unlimited Agent Mode.'],
+  ['Quá nhiều yêu cầu', 'Too many requests in a short time (rate limit). Please wait a minute.'],
+  ['Chưa có dữ liệu scan', 'No scan data yet. Press "Scan channels" to start.'],
+];
+
+function backendMsg(msg) {
+  if (!msg || typeof window === 'undefined') return msg;
+  let lang = 'vi';
+  try { lang = localStorage.getItem('rexi_lang') || 'vi'; } catch (e) { /* ignore */ }
+  if (lang !== 'en') return msg;
+  if (BACKEND_EN[msg]) return BACKEND_EN[msg];
+  for (const [p, e] of BACKEND_EN_PREFIX) if (msg.startsWith(p)) return e;
+  return msg;
+}
+
+
+/**
  * OpenCut editor URL — mặc định dùng bản cloud chính thức (opencut.app).
  * Override bằng env VITE_OPENCUT_URL (vd trỏ về instance self-host hoặc localhost:3000).
  */
@@ -52,7 +108,7 @@ export async function apiFetch(path, token, options = {}) {
         window.dispatchEvent(new CustomEvent('rexi_session_expired', { detail: data.error }));
       } catch (e) { console.warn('[rexi] session_expired dispatch failed', e); }
     }
-    const err = new Error(data.error || `HTTP ${res.status}`);
+    const err = new Error(backendMsg(data.error) || `HTTP ${res.status}`);
     err.status = res.status;
     throw err;
   }
@@ -79,6 +135,6 @@ export async function apiFetchPublic(path, options = {}) {
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(backendMsg(data.error) || `HTTP ${res.status}`);
   return data;
 }
