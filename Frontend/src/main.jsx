@@ -41,6 +41,10 @@ const isAdmin = window.location.pathname === '/admin';
   setInterval(() => {
     if (document.visibilityState === 'hidden') check();
   }, 10 * 60 * 1000);
+  // cap nhat ngay khi user quay lai tab — khong phai cho user reload
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') check();
+  });
 })();
 
 // Lỗi render không được bắt → thay vì trang trắng, hiện màn hình lỗi thân thiện

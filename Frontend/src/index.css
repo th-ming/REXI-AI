@@ -329,6 +329,12 @@ select {
 [data-theme="light"] .border-purple-500\/30 { border-color: rgba(47,98,232,.22); }
 [data-theme="light"] .border-amber-500\/30 { border-color: rgba(180,83,9,.25); }
 [data-theme="light"] .text-purple-300 { color: #7c3aed; }
+
+/* 11/10 (dark, theo yeu cau user): nut Skills/SuperTools + banner chat qua sang o dark -> ha wash */
+[data-theme="dark"] .bg-purple-900\/30 { background-color: rgba(61, 90, 224, 0.16); }
+[data-theme="dark"] .bg-amber-900\/30 { background-color: rgba(154, 111, 31, 0.18); }
+[data-theme="dark"] .from-amber-900\/30 { --tw-gradient-from: rgba(154, 111, 31, 0.16); }
+[data-theme="dark"] .to-orange-900\/30 { --tw-gradient-to: rgba(154, 111, 31, 0.12); }
 /* Tint nền white/x nhạt → mực nhạt */
 [data-theme="light"] .bg-white\/\[0\.02\] { background-color: rgba(26,32,51,.03); }
 [data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(26,32,51,.04); }
@@ -507,7 +513,7 @@ select {
 /* --- LIGHT: bù remap cho các hex tối đang dùng nhiều --- */
 [data-theme="light"] .bg-\[\#181920\] { background-color: #ffffff; }
 [data-theme="light"] .bg-\[\#0d0e11\] { background-color: #eef1f7; }
-[data-theme="light"] .bg-\[\#1e1f20\] { background-color: #ffffff; }
+[data-theme="light"] .bg-\[\#1e1f20\] { background-color: #f9fafd; }
 [data-theme="light"] .bg-\[\#141622\] { background-color: #ffffff; }
 [data-theme="light"] .bg-\[\#0d0e14\] { background-color: #eef1f7; }
 [data-theme="light"] .bg-\[\#0e0f17\],
@@ -1146,5 +1152,5 @@ select {
 }
 [data-theme="dark"] .bg-\[\#131417\] { background-color: #1b1e25; }
 [data-theme="dark"] .bg-\[\#181920\] { background-color: #1e2129; }
-[data-theme="dark"] .bg-\[\#1e1f20\].border-white\/\[0\.06\] { background-color: #20232b; }
+[data-theme="dark"] .bg-\[\#1e1f20\].border-white\/\[0\.06\] { background-color: #272b35; }
 [data-theme="dark"] .prose-rexi.bg-\[\#1e1f20\] { background-color: #21242c; }

@@ -216,6 +216,7 @@ export default function Sidebar({
 
       {/* User Profile Bar */}
       <div className="p-3 border-t border-white/5 flex items-center justify-between bg-[#131417] relative">
+        <span className="absolute top-0.5 right-2 text-[8px] text-slate-500 opacity-50 select-none pointer-events-none" aria-hidden="true">{typeof __BUILD__ !== 'undefined' ? __BUILD__ : ''}</span>
         {currentUser ? (
           <div className="relative" ref={userMenuRef}>
             <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition-opacity">

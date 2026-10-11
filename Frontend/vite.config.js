@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { execSync } from 'node:child_process'
+
+let buildId = 'dev'
+try { buildId = execSync('git rev-parse --short HEAD').toString().trim() } catch (e) { /* khong co git */ }
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -8,6 +12,9 @@ export default defineConfig({
     react(),
     tailwindcss()
   ],
+  define: {
+    __BUILD__: JSON.stringify(buildId),
+  },
   server: {
     host: true,  // Allow network access
     port: 5173,
