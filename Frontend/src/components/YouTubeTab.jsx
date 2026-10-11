@@ -719,15 +719,13 @@ showToast, active }) {
                   <button
                     key={c}
                     type="button"
-                    onClick={() => handleCategory(c)}
+                    onClick={() => handleCategory(t(getLang(), c))}
                     className={`px-2.5 py-1 rounded-full border text-[10px] transition-all ${
-                      activeCat === c
+                      activeCat === t(getLang(), c) || activeCat === c
                         ? 'bg-red-600/20 border-red-500/40 text-red-300 font-semibold'
                         : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10 hover:border-red-500/30'
                     }`}
-                  >
-                    {c}
-                  </button>
+                  >{t(getLang(), c)}</button>
                 ))}
               </div>
             </form>

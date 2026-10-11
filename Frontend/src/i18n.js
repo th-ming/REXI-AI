@@ -1447,6 +1447,22 @@ Object.assign(translations.en, {
   "NamMinh (Nam) · vi-VN": "NamMinh (Male) · vi-VN"
 });
 
+// SWEEP-EN-MAP:Batch9
+Object.assign(translations.en, {
+  "nhạc trẻ 2026": "new music 2026",
+  "viral": "viral",
+  "phim chiếu rạp": "movie trailers",
+  "bóng đá highlight": "football highlights",
+  "công nghệ mới": "new technology",
+  "kiến thức hữu ích": "useful knowledge",
+  "âm nhạc": "music",
+  "trò chơi": "gaming",
+  "tin tức": "news",
+  "trực tiếp": "live",
+  "podcast": "podcast",
+  "học tập": "learning"
+});
+
 export function getLang() {
   try { return localStorage.getItem('rexi_lang') || 'vi'; } catch (e) { return 'vi'; }
 }
