@@ -235,10 +235,10 @@ select {
 
 /* ═════════ STOREIFY THEME — port từ reel demo (light, sạch, accent xanh) ═════════ */
 [data-theme="light"] {
-  --bg-main: #eceef1;
-  --bg-sidebar: #f7f8fa;
+  --bg-main: #f5f7fb;
+  --bg-sidebar: #ffffff;
   --bg-card: #ffffff;
-  --bg-card-hover: #f1f3f6;
+  --bg-card-hover: #eef1f7;
   --accent: #2f5fd0;
   --accent-deep: #20439f;
   --accent-gradient: linear-gradient(135deg, #2f5fd0, #2f5fd0);
