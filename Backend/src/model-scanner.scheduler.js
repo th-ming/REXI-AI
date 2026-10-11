@@ -601,6 +601,17 @@ async function scanProvider(providerId) {
   let consecutiveSuccesses = 0;
   const EARLY_SUCCESS_THRESHOLD = 12; // 12 model liên tiếp working → provider ổn, bỏ qua phần còn lại
 
+  // SMART PACING 429: rate-limit per-minute/per-second (Gemini "HTTP 429", Mistral "1300")
+  // → backoff rồi quét tiếp, delay batch tăng dần — nạp ĐẦY ĐỦ model thay vì fuse sớm.
+  // Per-day (OpenRouter "free-models-per-day", MinRouter "daily free quota resets at...")
+  // → fuse cứng như cũ: backoff vô nghĩa, chờ quota ngày reset.
+  const RATE_LIMIT_RE = /429|rate.?limit|too many requests/i;
+  const DAILY_QUOTA_RE = /per[-_ ]?day|free-models-per-day|daily free quota|resets at \d{4}-\d{2}-\d{2}/i;
+  const RATE_BACKOFF_MS = 45 * 1000;
+  const MAX_RATE_BACKOFFS = 4;   // tối đa ~3 phút chờ/provider, lố thì fuse như cũ
+  let rateBackoffs = 0;
+  let batchDelay = BATCH_DELAY_MS;
+
   let quotaFuse = false;
   for (let i = 0; i < models.length; i += BATCH) {
     const batch = models.slice(i, i + BATCH);
@@ -629,7 +640,7 @@ async function scanProvider(providerId) {
       if (isFreeTier(modelId)) {
         const health = await quickHealthCheck(providerId, apiKey, modelId);
         const bucket = classifyHealth(health);
-        await saveScanResult(providerId, modelId, bucket, health.latency_ms, health.error);
+        await saveScanResult(providerId, modelId, bucket, health.latency_ms, health.error, RATE_LIMIT_RE.test(String(health.error || '')));
         return { id: modelId, ...health, bucket, tested: true, tier: 'free' };
       }
       // TIER-PAID mà probe đã kết luận thiếu tiền → gắn cờ thẳng, không call
@@ -660,12 +671,21 @@ async function scanProvider(providerId) {
     }));
     results.push(...batchResults);
 
-    // Bật fuse nếu batch này có ≥2 model TESTED thật fail vì 429/rate-limit
-    const rateFails = batchResults.filter(r => r.tested && /429|rate.?limit|too many requests/i.test(r.error || '')).length;
-    if (rateFails >= 2 && !quotaFuse) {
+    // Fuse/PACING 429: batch có ≥2 model TESTED thật fail vì rate-limit
+    const rateResults = batchResults.filter(r => r.tested && RATE_LIMIT_RE.test(r.error || ''));
+    if (rateResults.length >= 2 && !quotaFuse) {
+      const isDailyQuota = rateResults.some(r => DAILY_QUOTA_RE.test(r.error || ''));
+      if (!isDailyQuota && rateBackoffs < MAX_RATE_BACKOFFS) {
+        rateBackoffs++;
+        batchDelay = Math.min(Math.max(batchDelay * 4, 3000), 15000);
+        console.log(`[ModelScanner] ${cfg.name}: ${rateResults.length} model 429 per-minute/second — backoff ${RATE_BACKOFF_MS / 1000}s, delay batch ${batchDelay}ms, quét tiếp (${rateBackoffs}/${MAX_RATE_BACKOFFS})`);
+        await new Promise(r => setTimeout(r, RATE_BACKOFF_MS));
+        consecutiveFailures = 0;  // 429 không phải lỗi thật, không cộng chuỗi fail
+        continue;  // batch kế; model 429 vừa rồi không ghi DB (giữ trạng thái cũ)
+      }
       quotaFuse = true;
       const rest = models.slice(i + BATCH);
-      console.log(`[ModelScanner] ${cfg.name}: ${rateFails} model 429/rate-limit trong batch — FUSE, dừng gọi API (${rest.length} model giữ nguyên DB, lượt sau quét tiếp)`);
+      console.log(`[ModelScanner] ${cfg.name}: ${rateResults.length} model 429${isDailyQuota ? ' (hết quota NGÀY)' : ''} — FUSE, dừng gọi API (${rest.length} model giữ nguyên DB, lượt sau quét tiếp)`);
       for (const m of rest) {
         const err = 'Chưa test lượt này — provider hết quota/rate-limit (fuse)';
         await saveScanResult(providerId, m, 'error', 0, err, true);
@@ -706,9 +726,9 @@ async function scanProvider(providerId) {
       break;
     }
 
-    // Pacing
+    // Pacing (delay tăng dần khi gặp rate-limit)
     if (i + BATCH < models.length) {
-      await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+      await new Promise(r => setTimeout(r, batchDelay));
     }
   }
 
