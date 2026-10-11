@@ -310,6 +310,17 @@ select {
 [data-theme="light"] .text-teal-300 { color: #0d9488; }
 [data-theme="light"] .text-orange-300 { color: #ea580c; }
 [data-theme="light"] .text-red-300 { color: #dc2626; }
+/* 11/10: variant có opacity modifier (text-*-400/80…) — trước đây không remap → pastel on white xỉn */
+[data-theme="light"] .text-cyan-400\/80 { color: rgba(8,145,178,.9); }
+[data-theme="light"] .text-sky-400\/80 { color: rgba(2,132,199,.9); }
+[data-theme="light"] .text-blue-200\/90 { color: rgba(37,99,235,.95); }
+[data-theme="light"] .text-blue-200\/60 { color: rgba(37,99,235,.7); }
+[data-theme="light"] .text-rose-200\/70 { color: rgba(225,29,72,.8); }
+[data-theme="light"] .text-amber-400\/60 { color: rgba(217,119,6,.8); }
+[data-theme="light"] .hover\:text-amber-400:hover { color: #d97706; }
+[data-theme="light"] .text-amber-200\/80 { color: rgba(180,83,9,.9); }
+[data-theme="light"] .text-amber-300\/80 { color: rgba(217,119,6,.9); }
+[data-theme="light"] .text-emerald-400\/80 { color: rgba(5,150,105,.9); }
 /* Tint nền white/x nhạt → mực nhạt */
 [data-theme="light"] .bg-white\/\[0\.02\] { background-color: rgba(26,32,51,.03); }
 [data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(26,32,51,.04); }
