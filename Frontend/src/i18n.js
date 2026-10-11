@@ -1635,6 +1635,12 @@ Object.assign(translations.en, {
   "Thiết Kế & UI/UX (22 skills)": "Design & UI/UX (22 skills)"
 });
 
+// SWEEP-EN-MAP:BatchSkills3
+Object.assign(translations.en, {
+  "Quy tắc làm việc, auto-pilot, self-learning.": "Working rules, auto-pilot, self-learning.",
+  "Thiết kế giao diện, design system, brand identity, frontend visual.": "Interface design, design system, brand identity, frontend visual."
+});
+
 export function getLang() {
   try { return localStorage.getItem('rexi_lang') || 'vi'; } catch (e) { return 'vi'; }
 }
