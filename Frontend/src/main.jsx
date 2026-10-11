@@ -19,6 +19,16 @@ class ErrorBoundary extends Component {
   }
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary]', error, info?.componentStack);
+    // TỰ LÀNH: nếu crash do bundle cũ treo trong cache (vd asset hash thay đổi
+    // nhưng tab cũ vẫn chạy JS cũ) → reload 1 lần duy nhất để lấy bundle mới.
+    try {
+      const KEY = 'rexi_crash_reload_once';
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      if (!last || Date.now() - last > 60000) {
+        sessionStorage.setItem(KEY, String(Date.now()));
+        setTimeout(() => window.location.reload(), 800);
+      }
+    } catch (e) { /* sessionStorage bị chặn → giữ nút reload thủ công */ }
   }
   render() {
     if (this.state.error) {
