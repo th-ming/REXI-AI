@@ -275,7 +275,7 @@ select {
 [data-theme="light"] .border-white\/5 { border-color: rgba(26,32,51,.1); }
 [data-theme="light"] .border-white\/10 { border-color: rgba(26,32,51,.14); }
 [data-theme="light"] .border-white\/20 { border-color: rgba(26,32,51,.22); }
-[data-theme="light"] .bg-\[\#131417\] { background-color: #e9edf4; }
+[data-theme="light"] .bg-\[\#131417\] { background-color: #f6f8fc; }
 [data-theme="light"] .bg-\[\#1a1b24\] { background-color: #ffffff; }
 [data-theme="light"] .hover\:text-white:hover { color: #1a2033; }
 [data-theme="light"] .prose-rexi h1, [data-theme="light"] .prose-rexi h2, [data-theme="light"] .prose-rexi h3 { color: #1a2033; }
@@ -321,6 +321,14 @@ select {
 [data-theme="light"] .text-amber-200\/80 { color: rgba(180,83,9,.9); }
 [data-theme="light"] .text-amber-300\/80 { color: rgba(217,119,6,.9); }
 [data-theme="light"] .text-emerald-400\/80 { color: rgba(5,150,105,.9); }
+/* 11/10: nut Skills/SuperTools (bg-*-900/30 wash qua dam tren trang) + banner chat amber→orange + text purple vivid */
+[data-theme="light"] .bg-purple-900\/30 { background-color: rgba(35,73,184,.08); }
+[data-theme="light"] .bg-amber-900\/30 { background-color: rgba(180,83,9,.09); }
+[data-theme="light"] .from-amber-900\/30 { --tw-gradient-from: rgba(180,83,9,.08); }
+[data-theme="light"] .to-orange-900\/30 { --tw-gradient-to: rgba(194,65,12,.08); }
+[data-theme="light"] .border-purple-500\/30 { border-color: rgba(47,98,232,.22); }
+[data-theme="light"] .border-amber-500\/30 { border-color: rgba(180,83,9,.25); }
+[data-theme="light"] .text-purple-300 { color: #7c3aed; }
 /* Tint nền white/x nhạt → mực nhạt */
 [data-theme="light"] .bg-white\/\[0\.02\] { background-color: rgba(26,32,51,.03); }
 [data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(26,32,51,.04); }
@@ -375,7 +383,7 @@ select {
 [data-theme="light"] .bg-\[\#171922\] { background-color: #eef0f6; }
 [data-theme="light"] .bg-\[\#2b1845\] { background-color: #ede9fe; border-color: rgba(124,58,237,.35); }
 /* 11/10: hover surface còn sót (ChatTab quick actions, ImageGen chips) + border white fraction */
-[data-theme="light"] .hover\:bg-\[\#222325\]:hover { background-color: #e9edf5; }
+[data-theme="light"] .hover\:bg-\[\#222325\]:hover { background-color: #eef2fa; }
 [data-theme="light"] .hover\:bg-\[\#31343a\]:hover { background-color: #e8ebf3; }
 [data-theme="light"] .border-white\/\[0\.06\] { border-color: rgba(26,32,51,.1); }
 [data-theme="light"] .border-white\/\[0\.08\] { border-color: rgba(26,32,51,.12); }
@@ -499,7 +507,7 @@ select {
 /* --- LIGHT: bù remap cho các hex tối đang dùng nhiều --- */
 [data-theme="light"] .bg-\[\#181920\] { background-color: #ffffff; }
 [data-theme="light"] .bg-\[\#0d0e11\] { background-color: #eef1f7; }
-[data-theme="light"] .bg-\[\#1e1f20\] { background-color: #f4f5fa; }
+[data-theme="light"] .bg-\[\#1e1f20\] { background-color: #ffffff; }
 [data-theme="light"] .bg-\[\#141622\] { background-color: #ffffff; }
 [data-theme="light"] .bg-\[\#0d0e14\] { background-color: #eef1f7; }
 [data-theme="light"] .bg-\[\#0e0f17\],
@@ -523,7 +531,7 @@ select {
 [data-theme="light"] .bg-\[\#16171f\] { background-color: #f4f5fa; }
 [data-theme="light"] .bg-\[\#2b1845\] { background-color: #f3e8ff; }
 [data-theme="light"] .bg-\[\#1a1b24\] { background-color: #ffffff; }
-[data-theme="light"] .bg-\[\#131417\] { background-color: #e9edf4; }
+[data-theme="light"] .bg-\[\#131417\] { background-color: #f6f8fc; }
 [data-theme="light"] .bg-\[\#141522\],
 [data-theme="light"] .bg-\[\#1a1b23\] { background-color: #ffffff; }
 
@@ -1114,8 +1122,8 @@ select {
 [data-theme="light"] .bg-\[\#0d0e14\]\/90,
 [data-theme="light"] .bg-\[\#0d0e14\]\/70,
 [data-theme="light"] .bg-\[\#0a0b0e\]\/60,
-[data-theme="light"] .bg-\[\#222325\] { background-color: #eef0f6; }
-[data-theme="light"] .bg-\[\#131417\]\/40 { background-color: #e9edf4; }
+[data-theme="light"] .bg-\[\#222325\] { background-color: #f6f8fc; }
+[data-theme="light"] .bg-\[\#131417\]\/40 { background-color: #f6f8fc; }
 [data-theme="light"] .bg-\[\#31343a\] { background-color: #e2e6ef; }
 [data-theme="light"] .bg-slate-700, [data-theme="light"] .bg-slate-900 { background-color: #e2e8f0; }
 [data-theme="light"] .bg-slate-900\/75 { background-color: #cbd5e1; }
