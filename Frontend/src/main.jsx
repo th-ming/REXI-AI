@@ -8,6 +8,41 @@ import { getLang } from './i18n';
 
 const isAdmin = window.location.pathname === '/admin';
 
+// STALE-BUNDLE GUARD: so hash asset trong HTML server trả về với bundle đang chạy.
+// Khác → tab đang giữ bundle cũ trong RAM → tự reload 1 lần (khi tab ẩn để không
+// cắt ngang thao tác của user). Sau khi reload, bundle mới sẽ pass → xóa flag,
+// lần deploy sau check lại từ đầu.
+(function staleBundleGuard() {
+  const KEY = 'rexi_stale_reload_at';
+  const myAssets = () => [
+    ...[...document.querySelectorAll('script[src]')].map(s => s.src.split('/').pop()),
+    ...[...document.querySelectorAll('link[rel="stylesheet"]')].map(l => l.href.split('/').pop()),
+  ].filter(a => /^index-[\w-]+\.(js|css)$/.test(a));
+  const check = () => {
+    fetch('/', { cache: 'no-store' })
+      .then(r => r.text())
+      .then(html => {
+        if (!html.includes('id="root"')) return; // trang lỗi/cold-start → bỏ qua
+        const mine = myAssets();
+        const stale = mine.length > 0 && !mine.every(a => html.includes(a));
+        if (stale) {
+          const last = Number(sessionStorage.getItem(KEY) || 0);
+          if (!last || Date.now() - last > 60000) {
+            sessionStorage.setItem(KEY, String(Date.now()));
+            window.location.reload();
+          }
+        } else {
+          try { sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+        }
+      })
+      .catch(() => { /* offline/cold start → bỏ qua */ });
+  };
+  check();
+  setInterval(() => {
+    if (document.visibilityState === 'hidden') check();
+  }, 10 * 60 * 1000);
+})();
+
 // Lỗi render không được bắt → thay vì trang trắng, hiện màn hình lỗi thân thiện
 class ErrorBoundary extends Component {
   constructor(props) {
