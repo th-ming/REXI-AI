@@ -26,6 +26,15 @@ export default function Sidebar({
 }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
+  // Tag theme hiện tại (L/D) hiển thị cạnh build id — nhìn 1 phát biết tab đang chạy theme nào
+  const [themeTag, setThemeTag] = useState(() => document.documentElement.getAttribute('data-theme') || '');
+
+  useEffect(() => {
+    const el = document.documentElement;
+    const obs = new MutationObserver(() => setThemeTag(el.getAttribute('data-theme') || ''));
+    obs.observe(el, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -216,7 +225,7 @@ export default function Sidebar({
 
       {/* User Profile Bar */}
       <div className="p-3 border-t border-white/5 flex items-center justify-between bg-[#131417] relative">
-        <span className="absolute top-0.5 right-2 text-[8px] text-slate-500 opacity-50 select-none pointer-events-none" aria-hidden="true">{typeof __BUILD__ !== 'undefined' ? __BUILD__ : ''}</span>
+        <span className="absolute top-0.5 right-2 text-[8px] text-slate-500 opacity-50 select-none pointer-events-none" aria-hidden="true">{typeof __BUILD__ !== 'undefined' ? __BUILD__ : ''}{themeTag ? `·${themeTag.charAt(0).toUpperCase()}` : ''}</span>
         {currentUser ? (
           <div className="relative" ref={userMenuRef}>
             <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition-opacity">

@@ -47,6 +47,53 @@ const isAdmin = window.location.pathname === '/admin';
   });
 })();
 
+// CLIENT DIAG BEACON: báo cáo build + theme + màu browser đang VẼ thật (computed)
+// + probe phát hiện force-dark/darkreader về backend — để biết chính xác user
+// đang thấy gì mà không cần screenshot. Gửi 1 lần sau load, lỗi thì im lặng.
+(function clientDiag() {
+  const send = () => {
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = 1; cv.height = 1;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 1, 1);
+      const px = ctx.getImageData(0, 0, 1, 1).data;
+      const paintDark = px[0] < 160; // trắng bị vẽ thành tối → browser ép nền tối
+      const darkReader = !!document.querySelector(
+        '[data-darkreader-inline-bgcolor],[data-darkreader-inline-border],[data-darkreader-inline-color],style[data-darkreader-mode]'
+      );
+      const root = document.documentElement;
+      const aside = document.querySelector('aside');
+      const tile = document.querySelector('[class*="1e1f20"]');
+      const body = {
+        build: (typeof __BUILD__ !== 'undefined') ? __BUILD__ : '?',
+        theme: root.getAttribute('data-theme') || '(none)',
+        storedTheme: localStorage.getItem('rexi_theme_v2') || '(none)',
+        rootBg: getComputedStyle(root).backgroundColor,
+        rootColor: getComputedStyle(document.body).color,
+        asideBg: aside ? getComputedStyle(aside).backgroundColor : '',
+        tileBg: tile ? getComputedStyle(tile).backgroundColor : '',
+        prefersDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+        paintDark, darkReader,
+        url: location.href.slice(0, 200),
+        ua: navigator.userAgent.slice(0, 300),
+        vw: window.innerWidth, vh: window.innerHeight,
+        dpr: window.devicePixelRatio || 1,
+        touch: ('ontouchstart' in window) || navigator.maxTouchPoints > 0,
+      };
+      fetch('/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        keepalive: true,
+      }).catch(() => {});
+    } catch (e) { /* không bao giờ làm vỡ app */ }
+  };
+  if (document.readyState === 'complete') setTimeout(send, 1200);
+  else window.addEventListener('load', () => setTimeout(send, 1200));
+})();
+
 // Lỗi render không được bắt → thay vì trang trắng, hiện màn hình lỗi thân thiện
 class ErrorBoundary extends Component {
   constructor(props) {

@@ -173,6 +173,39 @@ const sessionSecret = resolveSessionSecret();
     });
   });
 
+  // ── CLIENT DIAG LOG (debug màu UI): FE gửi báo cáo browser, GET để đọc ──
+  // Chỉ chứa build/theme/màu computed — không có secret. Buffer RAM 60 dòng,
+  // xoay vòng. Endpoint tạm cho session debug, có thể gỡ sau.
+  const __clientLog = [];
+  app.post('/api/client-log', (req, res) => {
+    const b = req.body || {};
+    const s = (v, n) => String(v == null ? '' : v).slice(0, n);
+    __clientLog.push({
+      at: new Date().toISOString(),
+      build: s(b.build, 16),
+      theme: s(b.theme, 12),
+      storedTheme: s(b.storedTheme, 12),
+      rootBg: s(b.rootBg, 64),
+      rootColor: s(b.rootColor, 64),
+      asideBg: s(b.asideBg, 64),
+      tileBg: s(b.tileBg, 64),
+      prefersDark: !!b.prefersDark,
+      paintDark: !!b.paintDark,
+      darkReader: !!b.darkReader,
+      url: s(b.url, 200),
+      ua: s(b.ua, 300),
+      vw: Number(b.vw) || 0,
+      vh: Number(b.vh) || 0,
+      dpr: Number(b.dpr) || 0,
+      touch: !!b.touch,
+    });
+    if (__clientLog.length > 60) __clientLog.shift();
+    res.json({ ok: true });
+  });
+  app.get('/api/client-log', (req, res) => {
+    res.json({ ok: true, count: __clientLog.length, entries: __clientLog });
+  });
+
   const { promptNormalizerMiddleware } = require('./src/middleware/promptNormalizer.middleware');
   const adminRoutes = require('./src/routes/admin.routes');
   const githubRoutes = require('./src/routes/github.routes');
