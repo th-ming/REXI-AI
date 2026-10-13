@@ -40,8 +40,6 @@ import {
   FileText,
   Languages,
   ChevronLeft,
-  Sun,
-  Moon,
   MoreVertical,
   Plus,
   Share2,
@@ -1757,6 +1755,7 @@ useEffect(() => {
         currentUser={currentUser} setCurrentUser={setCurrentUser} setAuthToken={setAuthToken}
         setAuthModalOpen={setAuthModalOpen} setSettingsOpen={setSettingsOpen}
         apiFetch={apiFetch} API_BASE={API_BASE} showToast={showToast} setConversations={setConversations}
+        currentTheme={currentTheme} setCurrentTheme={setCurrentTheme}
         lang={lang}
       />
 
@@ -1866,32 +1865,6 @@ useEffect(() => {
                 </select>
               )}
             </div>
-
-            <button
-              type="button"
-              onClick={() => setCurrentTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
-              title={currentTheme === 'dark' ? t(lang, 'themeToLight') : t(lang, 'themeToDark')}
-              className="group relative w-8 h-8 flex items-center justify-center rounded-xl border border-white/10 bg-[#131417] text-slate-300 hover:text-white hover:border-white/20 transition-all active:scale-90"
-            >
-              <Sun
-                size={16}
-                strokeWidth={2.5}
-                className={`absolute transition-all duration-300 ease-out ${
-                  currentTheme === 'dark'
-                    ? 'opacity-0 rotate-90 scale-50'
-                    : 'opacity-100 rotate-0 scale-100 text-amber-400'
-                }`}
-              />
-              <Moon
-                size={16}
-                strokeWidth={2.5}
-                className={`absolute transition-all duration-300 ease-out ${
-                  currentTheme === 'dark'
-                    ? 'opacity-100 rotate-0 scale-100 text-indigo-300'
-                    : 'opacity-0 -rotate-90 scale-50'
-                }`}
-              />
-            </button>
 
             {/* ⋯ Menu thêm */}
             <div className="relative">
@@ -2453,16 +2426,16 @@ useEffect(() => {
                 onClick={() => setFabOpen(false)}
               />
 
-          {/* Panel công cụ — smoked glass, tuot ra tu mep, dau thi stagger
+          {/* Panel công cụ — smoked glass, TRƯỢT SÁT MÉP PHẢI (right-0, bo trái), đóng thì trượt hẳn vào mép
               bottom-[9.5rem]: luôn nằm TRÊN tab mép phải (tab bottom-24 → chiếm 96-152px) */}
           <div ref={fabMenuRef} className={
-            'fixed right-3 bottom-[9.5rem] z-[45] flex flex-col gap-1 p-2 rounded-2xl origin-right will-change-transform ' +
-            'rexi-fab-panel border ' +
+            'fixed right-0 bottom-[9.5rem] z-[45] flex flex-col gap-1 p-2 rounded-l-2xl rounded-r-none origin-right will-change-transform ' +
+            'rexi-fab-panel border border-r-0 ' +
             'transition-all duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] ' +
             'max-h-[calc(100dvh-216px)] max-w-[calc(100vw-24px)] overflow-y-auto pr-1.5 scrollbar-thin ' +
             (fabOpen
               ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto'
-              : 'opacity-0 translate-x-16 scale-[0.98] pointer-events-none')
+              : 'opacity-0 translate-x-full scale-[0.98] pointer-events-none')
           }>
               {/* Nhóm AI */}
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-3 pt-1 pb-1">{t(lang, 'fabAi')}</p>
@@ -2563,6 +2536,7 @@ useEffect(() => {
               className={
                 'group fixed bottom-24 right-0 z-[45] h-14 pl-3 pr-2.5 flex items-center rounded-l-full ' +
                 'rexi-fab-tab border border-r-0 ' +
+                (activeTab === 'chat' ? '' : 'rexi-fab-tab-ghost ') +
                 'transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform ' +
                 (fabOpen
                   ? '-translate-x-1 rexi-fab-tab-open'

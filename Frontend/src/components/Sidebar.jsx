@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
    PanelLeftClose, Plus, MessageSquare,
    Layers, Zap, Search, Trash2, ChevronDown, FolderOpen,
-   User, Settings, LogOut, Headphones, Shield, Pin
+   User, Settings, LogOut, Headphones, Shield, Pin, Sun, Moon
   } from 'lucide-react';
 import { API_BASE } from '../config';
 import { t, getLang } from '../i18n';
@@ -22,6 +22,7 @@ export default function Sidebar({
    setSkillsOpen, setSuperToolsOpen,
   currentUser, setCurrentUser, setAuthToken, setAuthModalOpen, setSettingsOpen,
   apiFetch, showToast, setConversations,
+  currentTheme = 'dark', setCurrentTheme,
   lang = 'vi'
 }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -257,6 +258,30 @@ export default function Sidebar({
               <Shield size={16} />
             </button>
           )}
+          <button
+            onClick={() => setCurrentTheme && setCurrentTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
+            title={currentTheme === 'dark' ? t(lang, 'themeToLight') : t(lang, 'themeToDark')}
+            className="relative w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+          >
+            <Sun
+              size={16}
+              strokeWidth={2.5}
+              className={`absolute transition-all duration-300 ease-out ${
+                currentTheme === 'dark'
+                  ? 'opacity-0 rotate-90 scale-50'
+                  : 'opacity-100 rotate-0 scale-100 text-amber-400'
+              }`}
+            />
+            <Moon
+              size={16}
+              strokeWidth={2.5}
+              className={`absolute transition-all duration-300 ease-out ${
+                currentTheme === 'dark'
+                  ? 'opacity-100 rotate-0 scale-100 text-indigo-300'
+                  : 'opacity-0 -rotate-90 scale-50'
+              }`}
+            />
+          </button>
           <button onClick={() => setSettingsOpen(true)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors" title={t(lang, 'settingsTitle')}>
             <Settings size={16} />
           </button>

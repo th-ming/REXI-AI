@@ -202,9 +202,10 @@ export default function IPTVTab({
           formData.append('audio', e.data, 'chunk.webm');
           formData.append('lang', 'auto');
 
+          const iptvToken = localStorage.getItem('rexi_token');
           fetch(`${API_BASE}/services/transcribe`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('rexi_token') || ''}` },
+            headers: iptvToken ? { 'Authorization': `Bearer ${iptvToken}` } : {},
             body: formData,
             credentials: 'include',
             signal: AbortSignal.timeout(20000), // timeout 20s — tránh sendingRef kẹt true khi request treo

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Rexi OpenCut Bridge",
+  "version": "1.0.0",
+  "description": "Cau noi Rexi AI agent <-> tab OpenCut: poll backend, thuc thi lenh tren tab opencut.app",
+  "permissions": ["storage", "tabs", "scripting", "alarms"],
+  "host_permissions": [
+    "https://rexiai.bot.cd/*",
+    "https://opencut.app/*",
+    "http://localhost:3000/*"
+  ],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://rexiai.bot.cd/*"],
+      "js": ["content-rexi.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Rexi OpenCut Bridge" }
+}

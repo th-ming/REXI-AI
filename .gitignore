@@ -93,3 +93,6 @@ tools/VieNeu-TTS/
 tools/cloudflared/
 tools/social-worker/
 *-hidden.vbs
+
+# Debug scripts chua secret - CAM commit
+Backend/decrypt_tokens.js

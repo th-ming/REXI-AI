@@ -2630,7 +2630,18 @@ function cleanupOldTemp() {
 cleanupOldTemp();
 setInterval(cleanupOldTemp, 60 * 60 * 1000).unref();
 
-router.post('/transcribe', authMiddleware, upload.single('audio'), async (req, res) => {
+// Guest vẫn dùng Phụ Đề AI được (không token) nhưng limit 30 req/phút/IP
+// (1 người xem ~12 chunk/phút) — chống lạm dụng quota Groq Whisper.
+// Lưu ý: client guest vẫn gửi header "Bearer " rỗng → coi như không có token.
+const transcribeGuestRate = rateLimit({ windowMs: 60000, max: 30 });
+function transcribeGate(req, res, next) {
+  const auth = req.headers.authorization;
+  if (auth && auth !== 'Bearer' && auth !== 'Bearer ') return proxyAuth(req, res, next);
+  if (req.query.token) return proxyAuth(req, res, next);
+  return transcribeGuestRate(req, res, next);
+}
+
+router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, res) => {
   const audioFile = req.file;
   const srcLang = req.body.lang || 'auto';
 
