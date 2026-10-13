@@ -473,6 +473,7 @@ export default function App() {
   const [iptvCountry, setIptvCountry] = useState('VN');
   const [iptvSubtitleOn, setIptvSubtitleOn] = useState(false);
   const [iptvEmbeddedSubs, setIptvEmbeddedSubs] = useState([]); // track phụ đề nhúng của kênh (đồng bộ 100%)
+  const [iptvError, setIptvError] = useState(''); // lỗi phát kênh (hiện overlay thay vì màn đen im lặng)
   const iptvVideoRef = useRef(null);
   const hlsRef = useRef(null);
 
@@ -941,11 +942,22 @@ useEffect(() => {
   }, [iptvSearch, iptvCategory, iptvCountry, iptvTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // HLS.js player for IPTV
+  // Phát có tiếng; nếu trình duyệt chặn autoplay có tiếng → tự mute rồi phát (user bấm loa để bật tiếng)
+  const tryPlay = useCallback((video) => {
+    video.muted = false;
+    video.play().catch(() => {
+      try {
+        video.muted = true;
+        video.play().catch(() => {});
+      } catch { /* ignore */ }
+    });
+  }, []);
   const playHlsStream = useCallback((url) => {
     const video = iptvVideoRef.current;
     if (!video) return;
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     setIptvEmbeddedSubs([]);
+    setIptvError('');
     // Hàm đọc track phụ đề với delay (hls.js populate subtitleTracks chậm hơn MANIFEST_PARSED)
     const readEmbeddedSubs = (hls) => {
       setTimeout(() => {
@@ -968,6 +980,7 @@ useEffect(() => {
     const _proxyToken = localStorage.getItem('rexi_token') || '';
     const streamUrl = `${API_BASE}/services/iptv/proxy?url=${encodeURIComponent(url)}${_proxyToken ? `&token=${encodeURIComponent(_proxyToken)}` : ''}`;
     let fallbackTried = false;
+    const failChannel = () => setIptvError(t(lang, 'Kênh này hiện không phát được — thử kênh khác.'));
     const attachFallback = () => {
       // Fallback: proxy lỗi → thử phát trực tiếp URL gốc (giữ kênh chạy như trước)
       fallbackTried = true;
@@ -978,14 +991,21 @@ useEffect(() => {
         fb.loadSource(url);
         fb.attachMedia(video);
         fb.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => {});
+          setIptvError('');
+          tryPlay(video);
           readEmbeddedSubs(fb);
         });
         fb.on(Hls.Events.SUBTITLE_TRACKS_LOADED, () => readEmbeddedSubs(fb));
+        fb.on(Hls.Events.ERROR, (evt, data) => {
+          if (data.fatal) failChannel();
+        });
         hlsRef.current = fb;
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
-        video.play().catch(() => {});
+        setIptvError('');
+        tryPlay(video);
+      } else {
+        failChannel();
       }
     };
     if (Hls.isSupported()) {
@@ -993,22 +1013,28 @@ useEffect(() => {
       hls.loadSource(streamUrl);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {});
+        setIptvError('');
+        tryPlay(video);
         readEmbeddedSubs(hls);
       });
       hls.on(Hls.Events.SUBTITLE_TRACKS_LOADED, () => readEmbeddedSubs(hls));
       hls.on(Hls.Events.ERROR, (evt, data) => {
         if (data.fatal && !fallbackTried) attachFallback();
+        else if (data.fatal) failChannel();
       });
       hlsRef.current = hls;
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = streamUrl;
-      video.play().catch(() => {});
+      setIptvError('');
+      tryPlay(video);
       video.onerror = () => {
         if (!fallbackTried) attachFallback();
+        else failChannel();
       };
+    } else {
+      failChannel();
     }
-  }, [iptvVideoRef, hlsRef]);
+  }, [iptvVideoRef, hlsRef, tryPlay, lang]);
 
   useEffect(() => {
     if (selectedChannel) playHlsStream(selectedChannel.url);
@@ -1976,6 +2002,7 @@ useEffect(() => {
               iptvVideoRef={iptvVideoRef}
               iptvSubtitleOn={iptvSubtitleOn} setIptvSubtitleOn={setIptvSubtitleOn}
               iptvEmbeddedSubs={iptvEmbeddedSubs}
+              iptvError={iptvError}
               hlsRef={hlsRef}
             />
           </div>

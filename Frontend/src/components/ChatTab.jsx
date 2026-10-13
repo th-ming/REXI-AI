@@ -130,13 +130,13 @@ export default function ChatTab({
                   ))}
                 </div>
 
-                <div className="rexi-scroll flex gap-2 w-full overflow-x-auto px-1 py-1 mt-3.5">
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 w-full px-1 py-1 mt-3.5">
                   {EXTRA_ACTIONS.map((x, i) => (
                     <button
                       key={x.tab}
                       onClick={() => onOpenFeature?.(x.tab)}
                       style={{ animationDelay: `${410 + i * 45}ms` }}
-                      className="rexi-rise rexi-pill inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] text-slate-300 hover:text-white"
+                      className="rexi-rise rexi-pill inline-flex items-center justify-center gap-1.5 min-w-0 w-full px-1 py-1.5 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] whitespace-nowrap overflow-hidden text-slate-300 hover:text-white"
                     >
                       <span className={x.color || 'text-slate-400'}>{x.icon}</span>{t(lang, x.labelKey)}
                     </button>
@@ -336,17 +336,17 @@ export default function ChatTab({
               onClick={() => setChatModeOpen(!chatModeOpen)}
               aria-haspopup="menu"
               aria-expanded={chatModeOpen}
-              className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold cursor-pointer select-none transition-all shadow-sm ${
+              className={`flex items-center justify-center gap-1 rounded-xl border px-2 py-1.5 w-[118px] text-[10px] font-bold cursor-pointer select-none transition-all shadow-sm ${
                 executionMode === 'agent'
-                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-200 hover:border-purple-400/60 hover:bg-purple-500/15'
+                  ? 'bg-orange-500/10 border-orange-500/30 text-orange-300 hover:border-orange-400/60 hover:bg-orange-500/15'
                   : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200 hover:border-cyan-400/60 hover:bg-cyan-500/15'
               }`}
             >
               {executionMode === 'agent'
-                ? <Zap size={13} className="shrink-0" />
-                : <MessageSquare size={13} className="shrink-0" />}
+                ? <Zap size={11} className="shrink-0" />
+                : <MessageSquare size={11} className="shrink-0" />}
               <span className="whitespace-nowrap">{executionMode === 'agent' ? 'Agent Mode' : 'Chat AI'}</span>
-              <ChevronDown size={12} className={`shrink-0 transition-transform duration-200 ${chatModeOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown size={10} className={`shrink-0 transition-transform duration-200 ${chatModeOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown - absolute, không đẩy elements khác */}
@@ -377,17 +377,17 @@ export default function ChatTab({
                     type="button"
                     onClick={() => { setExecutionMode('agent'); setChatModeOpen(false); }}
                     className={`w-full flex items-center gap-2.5 px-2 py-2 mt-1 rounded-xl text-left cursor-pointer transition-all border ${
-                      executionMode === 'agent' ? 'bg-purple-500/10 border-purple-500/30' : 'border-transparent hover:bg-white/5'
+                      executionMode === 'agent' ? 'bg-orange-500/10 border-orange-500/30' : 'border-transparent hover:bg-white/5'
                     }`}
                   >
-                    <span className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/25 text-purple-300 shrink-0">
+                    <span className="p-1.5 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 shrink-0">
                       <Zap size={13} />
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-bold text-slate-100">Agent Mode</span>
                       <span className="block text-[10px] text-slate-400 mt-0.5 leading-tight">{t(lang, 'Tự động thực thi code & tác vụ')}</span>
                     </span>
-                    {executionMode === 'agent' && <Check size={14} className="text-purple-300 shrink-0" />}
+                    {executionMode === 'agent' && <Check size={14} className="text-orange-300 shrink-0" />}
                   </button>
 
                   {executionMode === 'agent' && (
@@ -435,14 +435,14 @@ export default function ChatTab({
                           agentEngine === 'dsh' ? 'bg-white/5 border-white/10' : 'border-transparent hover:bg-white/5'
                         }`}
                       >
-                        <span className="p-1 rounded-lg bg-purple-500/10 border border-purple-500/25 text-purple-300 shrink-0">
+                        <span className="p-1 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 shrink-0">
                           <Zap size={12} />
                         </span>
                         <span className="flex-1 min-w-0">
                           <span className="block text-[11px] font-bold text-slate-200">DeepSeek Harness</span>
                           <span className="block text-[10px] text-slate-500 mt-0.5 leading-tight">{t(lang, 'Nhanh hơn ~30% (thử nghiệm — server cloud tự chạy Agent nội bộ)')}</span>
                         </span>
-                        {agentEngine === 'dsh' && <Check size={13} className="text-purple-400 shrink-0" />}
+                        {agentEngine === 'dsh' && <Check size={13} className="text-orange-400 shrink-0" />}
                       </button>
                     </div>
                   )}

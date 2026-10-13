@@ -1169,8 +1169,15 @@ function youtubeProxyAuth(req, res, next) {
   if (req.headers.authorization || req.query.token) return proxyAuth(req, res, next);
   return next(); // khách: handler /youtube/proxy kiểm tra host allowlist
 }
+// Guest vẫn xem IPTV được (không token) nhưng limit riêng 30 req/phút/IP
+// để chống lạm dụng băng thông — SSRF check trong handler vẫn áp dụng.
+const iptvGuestRate = rateLimit({ windowMs: 60000, max: 30 });
+function iptvProxyGate(req, res, next) {
+  if (req.headers.authorization || req.query.token) return proxyAuth(req, res, next);
+  return iptvGuestRate(req, res, next);
+}
 
-router.get('/iptv/proxy', rateLimit({ windowMs: 60000, max: 120 }), proxyAuth, async (req, res) => {
+router.get('/iptv/proxy', rateLimit({ windowMs: 60000, max: 120 }), iptvProxyGate, async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'Missing url param' });
 

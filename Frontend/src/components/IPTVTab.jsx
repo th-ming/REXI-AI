@@ -69,7 +69,7 @@ export default function IPTVTab({
   iptvSearch, setIptvSearch,
   iptvChannels, selectedChannel, setSelectedChannel,
   iptvSubtitleOn, setIptvSubtitleOn,
-  iptvEmbeddedSubs,
+  iptvEmbeddedSubs, iptvError,
   hlsRef,
   fetchIPTV, iptvVideoRef,
 }) {
@@ -78,6 +78,12 @@ export default function IPTVTab({
 
   // Filter states
   const [countrySearch, setCountrySearch] = useState('');
+  // Hộp chọn quốc gia thu gọn (mặc định đóng cho gọn chỗ)
+  const [countryListOpen, setCountryListOpen] = useState(false);
+  const selectedCountry = ALL_IPTV_COUNTRIES.find(c => c.code === iptvCountry);
+  // Hộp chọn thể loại thu gọn (mặc định đóng cho gọn chỗ)
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const selectedCategory = IPTV_CATEGORIES.find(c => c.id === iptvCategory);
 
   // Sidebar width state
   const [sidebarWidth, setSidebarWidth] = useState(210);
@@ -326,13 +332,23 @@ export default function IPTVTab({
             </button>
           </div>
 
-          {/* Category filter buttons */}
+          {/* Category filter buttons — hộp thu gọn, bấm để mở */}
           {iptvTab === 'category' && (
-            <div className="mt-2 max-h-[160px] overflow-y-auto space-y-0.5 scrollbar-thin">
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setCategoryOpen(v => !v)}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-[#1a1b24] border border-white/5 rounded-lg text-[10px] text-white hover:border-rose-500/30 transition-all"
+              >
+                <span className="truncate flex-1 text-left">{selectedCategory ? t(lang, selectedCategory.name) : t(lang, 'Chọn thể loại')}</span>
+                <span className={`text-slate-500 text-[9px] shrink-0 transition-transform ${categoryOpen ? 'rotate-180' : ''}`}>▼</span>
+              </button>
+              {categoryOpen && (
+              <div className="mt-1 max-h-[160px] overflow-y-auto space-y-0.5 scrollbar-thin border border-white/5 rounded-lg bg-[#131417] p-1">
               {IPTV_CATEGORIES.map(cat => (
                 <button
                   key={cat.id}
-                  onClick={() => { setIptvCategory?.(cat.id); fetchIPTV?.(cat.id); }}
+                  onClick={() => { setIptvCategory?.(cat.id); setCategoryOpen(false); fetchIPTV?.(cat.id); }}
                   className={`w-full text-left px-2 py-1 rounded text-[10px] font-medium transition-all ${
                     iptvCategory === cat.id ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
@@ -340,12 +356,31 @@ export default function IPTVTab({
                   {t(lang, cat.name)}
                 </button>
               ))}
+              </div>
+              )}
             </div>
           )}
 
-          {/* Country filter */}
+          {/* Country filter — hộp thu gọn, bấm để mở danh sách */}
           {iptvTab === 'country' && (
             <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setCountryListOpen(v => !v)}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-[#1a1b24] border border-white/5 rounded-lg text-[10px] text-white hover:border-rose-500/30 transition-all"
+              >
+                {selectedCountry ? (
+                  <>
+                    <FlagImg code={selectedCountry.code} size={14} />
+                    <span className="truncate flex-1 text-left">{new Intl.DisplayNames([lang], { type: 'region' }).of(selectedCountry.code) || selectedCountry.name}</span>
+                  </>
+                ) : (
+                  <span className="truncate flex-1 text-left text-slate-300">🌍 {t(lang, 'Tất cả')} ({ALL_IPTV_COUNTRIES.length} {t(lang, 'quốc gia')})</span>
+                )}
+                <span className={`text-slate-500 text-[9px] shrink-0 transition-transform ${countryListOpen ? 'rotate-180' : ''}`}>▼</span>
+              </button>
+              {countryListOpen && (
+              <div className="mt-1 border border-white/5 rounded-lg bg-[#131417] p-1">
               <div className="relative">
                 <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
@@ -360,7 +395,7 @@ export default function IPTVTab({
               <div className="mt-1 max-h-[260px] overflow-y-auto space-y-0.5 scrollbar-thin">
                 {/* Reset / All button */}
                 <button
-                  onClick={() => { setIptvCountry?.(null); setCountrySearch(''); fetchIPTV?.(iptvCategory || 'news'); }}
+                  onClick={() => { setIptvCountry?.(null); setCountrySearch(''); setCountryListOpen(false); fetchIPTV?.(iptvCategory || 'news'); }}
                   className={`w-full text-left px-2 py-0.5 rounded text-[9px] font-medium transition-all ${
                     !iptvCountry ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
@@ -371,7 +406,7 @@ export default function IPTVTab({
                 {filteredCountries.map(c => (
                   <button
                     key={c.code}
-                    onClick={() => { setIptvCountry?.(c.code); setCountrySearch(''); fetchIPTV?.(null, c.code); }}
+                    onClick={() => { setIptvCountry?.(c.code); setCountrySearch(''); setCountryListOpen(false); fetchIPTV?.(null, c.code); }}
                     className={`w-full text-left px-2 py-0.5 rounded text-[9px] font-medium transition-all flex items-center gap-1.5 ${
                       iptvCountry === c.code ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white hover:bg-white/5'
                     }`}
@@ -385,6 +420,8 @@ export default function IPTVTab({
                   <div className="text-[9px] text-slate-600 text-center py-2">{t(lang, 'Không tìm thấy quốc gia')}</div>
                 )}
               </div>
+              </div>
+              )}
             </div>
           )}
 
@@ -509,6 +546,16 @@ export default function IPTVTab({
               <div className="text-center space-y-2">
                 <Tv size={40} className="mx-auto text-slate-600" />
                 <p>{t(lang, 'Chọn kênh để phát trực tiếp')}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Overlay báo kênh lỗi thay vì màn đen im lặng */}
+          {!!iptvError && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 pointer-events-none">
+              <div className="text-center space-y-1.5 px-6">
+                <Tv size={32} className="mx-auto text-rose-400" />
+                <p className="text-xs text-white font-medium">{iptvError}</p>
               </div>
             </div>
           )}
