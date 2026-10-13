@@ -2539,8 +2539,8 @@ useEffect(() => {
                 (activeTab === 'chat' ? '' : 'rexi-fab-tab-ghost ') +
                 'transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform ' +
                 (fabOpen
-                  ? '-translate-x-1 rexi-fab-tab-open'
-                  : 'hover:-translate-x-3 active:scale-[0.98]')
+                  ? 'translate-x-0 rexi-fab-tab-open'
+                  : 'hover:translate-x-0 active:translate-x-0')
               }
               title={fabOpen ? t(lang, 'ariaCollapse') : t(lang, 'openMenu')}
             >
