@@ -125,7 +125,7 @@ export default function Sidebar({
       <div className="p-3">
         <button
           onClick={handleNewConversation}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium text-xs transition-all"
+          className="btn-new-conv w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium text-xs transition-all"
         >
           <Plus size={15} />
           <span>{t(lang, 'newConversation')}</span>
@@ -172,9 +172,9 @@ export default function Sidebar({
           <div
             key={conv.ma_hoi_thoai}
             onClick={() => { setActiveConvId(conv.ma_hoi_thoai); setActiveTab('chat'); }}
-            className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${
+            className={`conv-item group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${
               activeConvId === conv.ma_hoi_thoai
-                ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                ? 'conv-active bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
                 : 'border-transparent hover:bg-white/5 text-slate-300'
             }`}
           >

@@ -17,10 +17,10 @@
 
 /* ── THEMES VARIABLES ── */
 [data-theme="dark"] {
-  --bg-main: #101113;
-  --bg-sidebar: #16181b;
-  --bg-card: #1b1d21;
-  --bg-card-hover: #23262b;
+  --bg-main: #0a0b0d;
+  --bg-sidebar: #0e0f12;
+  --bg-card: #131418;
+  --bg-card-hover: #1a1d22;
   --accent: #6f8bff;
   --accent-deep: #3d5ae0;
   --accent-gradient: linear-gradient(135deg, #6f8bff, #6f8bff);
@@ -260,6 +260,17 @@ select {
 }
 @media (prefers-reduced-motion: reduce) {
   .theme-anim, .theme-anim *, .theme-anim *::before, .theme-anim *::after { transition: none !important; }
+}
+
+/* Nút "Cuộc Trò Chuyện Mới" + ô conv active: nền SÁNG chỉ sáng hơn ở theme sáng */
+[data-theme="light"] .btn-new-conv {
+  background-image: linear-gradient(90deg, #3b82f6, #2f62e8) !important;
+  box-shadow: 0 2px 8px rgba(47, 98, 232, .25);
+}
+[data-theme="light"] .btn-new-conv:hover { filter: brightness(1.06); }
+[data-theme="light"] .conv-item.conv-active {
+  background-color: rgba(47, 98, 232, .1);
+  border-color: rgba(47, 98, 232, .35);
 }
 
 /* Remap các utility tối hardcode → light (khỏi sửa 15 files) */
