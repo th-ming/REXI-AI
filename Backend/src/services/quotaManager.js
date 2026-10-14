@@ -61,7 +61,7 @@ const BASE_RULES = {
   agentrouter:{ max: 5,   windowMs: 60 * 1000 },
   opencode:   { max: 999, windowMs: 60 * 1000 },           // local CLI
   bai:        { max: 15,  windowMs: 60 * 1000 },
-  kiosapi:    { max: 15,  windowMs: 60 * 1000 },
+  kiosapi:    { max: 5,   windowMs: 60 * 1000 },          // verified 10/2026: 5 req/minute
   unorouter:  { max: 1,   windowMs: 60 * 1000 },           // free tier = 1 req/phút — chặn từ app khỏi ăn 429 của upstream
 };
 
