@@ -27,10 +27,23 @@ const TT_ARGS = [
 
 // Serialize các lần scrape feed (mỗi lần launch 1 browser — free tier không chịu 2 browser song song)
 let _chain = Promise.resolve();
+let _viecNang = 0; // số job browser đang chạy (để login/warm-up tránh mở browser thứ 2 → hết RAM sập máy)
 function serialize(task) {
-  const run = _chain.then(task, task);
+  const run = _chain.then(async () => {
+    _viecNang++;
+    try { return await task(); } finally { _viecNang--; }
+  }, async () => {
+    _viecNang++;
+    try { return await task(); } finally { _viecNang--; }
+  });
   _chain = run.catch(() => {});
   return run;
+}
+// Chờ máy rảnh browser (tối đa gioiHanMs) — quá giờ thì báo bận để thử lại sau
+async function choRanh(gioiHanMs) {
+  const han = Date.now() + gioiHanMs;
+  while (_viecNang > 0 && Date.now() < han) await new Promise((r) => setTimeout(r, 2000));
+  if (_viecNang > 0) throw new Error('Máy đang bận tải feed — thử mở mã lại sau 1 phút');
 }
 
 function cleanUser(u) {
@@ -71,10 +84,13 @@ const QR_TIMEOUT = 150000;
 // Trình duyệt QR chạy nền sẵn (hâm nóng): bấm là chụp mã ngay, khỏi chờ mở mới.
 // Giữ đúng 1 browser + 1 trang login; chết thì lần sau mở lại (đường chậm cũ).
 let _qrNong = null;
+let _nongDangChay = null; // single-flight: chống mở 2 browser hâm cùng lúc (hết RAM sập máy)
 async function layTrangQrNong() {
   if (_qrNong && _qrNong.page && !_qrNong.page.isClosed()) return _qrNong;
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch({ headless: true, args: TT_ARGS });
+  if (_nongDangChay) return _nongDangChay;
+  _nongDangChay = (async () => {
+    const { chromium } = require('playwright');
+    const browser = await chromium.launch({ headless: true, args: TT_ARGS });
   const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
   await ctx.route('**/*', (route) => {
     const type = route.request().resourceType();
@@ -88,10 +104,20 @@ async function layTrangQrNong() {
   _qrNong.sinhLuc = Date.now(); // QR hiện từ lúc này
   _qrNong.maMoiLuc = Date.now();
   return _qrNong;
+  })();
+  try {
+    return await _nongDangChay;
+  } finally {
+    _nongDangChay = null;
+  }
 }
 // (Không tải nền liên tục — tốn RAM/CPU làm sập máy free; mã mới khi cần)
-// Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot)
-setTimeout(() => { layTrangQrNong().catch(() => { _qrNong = null; }); }, 20000);
+// Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot; chờ máy rảnh mới hâm)
+setTimeout(() => {
+  (async () => {
+    try { await choRanh(90000); await layTrangQrNong(); } catch (e) { _qrNong = null; }
+  })();
+}, 20000);
 
 async function startLogin() {
   for (const [id, rec] of _logins) {
@@ -128,6 +154,8 @@ async function chayLogin(loginId) {
         nong.sinhLuc = Date.now();
       }
     } catch (eNong) {
+      // Đường chậm cũ: mở browser riêng — nhưng CHỜ máy rảnh trước (không 2 browser cùng lúc)
+      await choRanh(45000);
       const { chromium } = require('playwright');
       browser = await chromium.launch({
         headless: true,
