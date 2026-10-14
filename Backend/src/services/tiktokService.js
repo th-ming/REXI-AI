@@ -82,9 +82,10 @@ async function layTrangQrNong() {
     return route.continue();
   }).catch(() => {});
   const page = await ctx.newPage();
-  _qrNong = { browser, ctx, page };
+  _qrNong = { browser, ctx, page, sinhLuc: Date.now() };
   await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
   await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 15000 }).catch(() => {});
+  _qrNong.sinhLuc = Date.now(); // QR hiện từ lúc này
   return _qrNong;
 }
 // Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot)
@@ -117,9 +118,13 @@ async function chayLogin(loginId) {
     try {
       const nong = await layTrangQrNong();
       page = nong.page; ctx = nong.ctx; dungChung = true;
-      // Tải mới mã QR trên trang nóng (mã cũ có thể hết hạn)
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
-      await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 15000 }).catch(() => {});
+      // Trang nóng còn mới (<75s) thì chụp luôn khỏi tải lại (nhanh nhất);
+      // cũ rồi mới tải mới mã (mã cũ có thể hết hạn)
+      if (Date.now() - (nong.sinhLuc || 0) > 75000) {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+        await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 15000 }).catch(() => {});
+        nong.sinhLuc = Date.now();
+      }
     } catch (eNong) {
       const { chromium } = require('playwright');
       browser = await chromium.launch({
@@ -159,12 +164,33 @@ async function chayLogin(loginId) {
     if (!anh) throw new Error('Không chụp được mã QR');
     rec.qr = 'data:image/png;base64,' + anh.toString('base64');
     rec.status = 'waiting';
+    let qrLuc = Date.now();
     // Chờ user quét + XÁC NHẬN trên điện thoại: đăng nhập xong là có cookie
     // sessionid/sid_tt (rời trang login) → gom cookie thành phiên.
-    // Mã bị từ chối/hết hạn (TikTok báo "không thể đăng nhập bằng phương thức
-    // này / thử cách khác") → tự lấy mã MỚI ngay, tối đa 4 lần.
+    // Mã cũ là nguyên nhân quét báo lỗi → tự đổi mã MỚI khi: thấy chữ hết hạn/
+    // bị từ chối, HOẶC quá 55s chưa ai quét (mã TikTok hết hạn nhanh).
+    const doiMaMoi = async (lyDo) => {
+      if (soLanDoiMa >= 4) { rec.error = 'TikTok từ chối mã QR nhiều lần — thử lại sau hoặc dán cookie'; return 'het'; }
+      soLanDoiMa++;
+      rec.daQuet = false;
+      rec.dangDoiMa = true;
+      try {
+        const nut = page.getByText(/làm mới|refresh/i).first();
+        if (await nut.count().catch(() => 0)) await nut.click({ timeout: 8000 }).catch(() => {});
+        else {
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+          await bamChonQr();
+        }
+        const moi = await chupMaQr();
+        if (moi && moi.length > 2000) {
+          rec.qr = 'data:image/png;base64,' + moi.toString('base64');
+          qrLuc = Date.now();
+        }
+      } catch (eDoi) { /* giữ mã cũ, lượt sau thử tiếp */ }
+      rec.dangDoiMa = false;
+      return 'xong';
+    };
     let soLanDoiMa = 0;
-    let lanCuoiKiemMa = 0;
     while (Date.now() < han) {
       await page.waitForTimeout(3000);
       const url = page.url();
@@ -175,26 +201,11 @@ async function chayLogin(loginId) {
         // Đã quét mã thì trang đổi chữ sang chờ xác nhận — báo cho user biết
         if (/xác nhận|confirm|verify it.s you|đăng nhập trên thiết bị/i.test(chu)) rec.daQuet = true;
       }
-      if (Date.now() - lanCuoiKiemMa > 12000) {
-        lanCuoiKiemMa = Date.now();
-        if (/hết hạn|expired|không thể đăng nhập|thử.*cách khác|try.*other|refresh.*qr|làm mới/i.test(chu)) {
-          if (soLanDoiMa >= 4) { rec.error = 'TikTok từ chối mã QR nhiều lần — thử lại sau hoặc dán cookie'; break; }
-          soLanDoiMa++;
-          rec.daQuet = false;
-          rec.dangDoiMa = true;
-          try {
-            const nut = page.getByText(/làm mới|refresh/i).first();
-            if (await nut.count().catch(() => 0)) await nut.click({ timeout: 8000 }).catch(() => {});
-            else {
-              await page.reload({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
-              await bamChonQr();
-            }
-            const moi = await chupMaQr();
-            if (moi && moi.length > 2000) rec.qr = 'data:image/png;base64,' + moi.toString('base64');
-          } catch (eDoi) { /* giữ mã cũ, lượt sau thử tiếp */ }
-          rec.dangDoiMa = false;
-          continue;
-        }
+      const maHong = /hết hạn|expired|không thể đăng nhập|thử.*cách khác|try.*other|refresh.*qr|làm mới/i.test(chu);
+      const maCu = !rec.daQuet && Date.now() - qrLuc > 55000;
+      if (maHong || maCu) {
+        if (await doiMaMoi() === 'het') break;
+        continue;
       }
       if (!url.includes('/login') || /sessionid|sid_tt|sid_guard|uid_tt/i.test(chuoi)) {
         if (/sessionid|sid_tt/i.test(chuoi)) {
