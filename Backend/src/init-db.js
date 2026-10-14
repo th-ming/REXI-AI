@@ -41,7 +41,9 @@ const TABLES = [
   `CREATE TABLE trending_notifications ( id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, owner TEXT, name TEXT, description TEXT DEFAULT '', language TEXT DEFAULT '', stars INTEGER DEFAULT 0, stars_gained INTEGER DEFAULT 0, period TEXT DEFAULT '', url TEXT, is_read INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now', 'localtime')) )`,
   `CREATE TABLE audit_log ( id INTEGER PRIMARY KEY AUTOINCREMENT, thoi_gian DATETIME DEFAULT CURRENT_TIMESTAMP, phuong_thuc TEXT, duong_dan TEXT, dia_chi_ip TEXT, ma_nguoi_dung TEXT, ma_trang_thai INTEGER, thoi_luong_ms INTEGER, tai_lieu TEXT )`,
   `CREATE TABLE context_sessions ( ma_nguoi_dung TEXT PRIMARY KEY, du_lieu TEXT NOT NULL, ngay_cap_nhat DATETIME DEFAULT CURRENT_TIMESTAMP )`,
-  `CREATE TABLE sessions_store ( sid TEXT PRIMARY KEY, du_lieu TEXT NOT NULL, expires_at TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP )`,
+  `CREATE TABLE sessions_store ( sid TEXT PRIMARY KEY, du_lieu TEXT NOT NULL,
+expires_at TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP )`,
+  `CREATE TABLE tiktok_phien ( token TEXT PRIMARY KEY, cookie_ma_hoa TEXT NOT NULL, het_han INTEGER NOT NULL )`,
   // P2-20(8): gom từ services.routes.js (đợt 4 làm migration — đợt này chỉ gom, KHÔNG đổi schema)
   `CREATE TABLE chia_se_hoi_thoai (ma_chia_se TEXT PRIMARY KEY, ma_hoi_thoai TEXT NOT NULL, ngay_tao TEXT DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE lich_nhac (ma_nhac TEXT PRIMARY KEY, ma_nguoi_dung TEXT NOT NULL, noi_dung TEXT NOT NULL, thoi_gian TEXT NOT NULL, da_nhac INTEGER DEFAULT 0, ngay_tao TEXT DEFAULT CURRENT_TIMESTAMP)`,

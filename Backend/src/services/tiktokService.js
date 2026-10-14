@@ -49,6 +49,19 @@ function cleanTag(t) {
 // 2 cách: quét QR (khuyên dùng) hoặc dán document.cookie thủ công.
 // FE: POST /tiktok/session {cookies} → {token}; token đi kèm feed/media.
 const _sessions = new Map(); // token -> { cookieString, exp }
+// Lưu phiên xuống DB (sống qua restart/deploy — quét 1 lần dùng nhiều tuần)
+const _db = require('../config/db');
+const _runSql = (sql, params = []) => new Promise((res, rej) => _db.run(sql, params, (e) => e ? rej(e) : res()));
+const _getRow = (sql, params = []) => new Promise((res, rej) => _db.get(sql, params, (e, r) => e ? rej(e) : res(r)));
+const _cryptoKeys = (() => { try { return require('../utils/cryptoKeys'); } catch (e) { return null; } })();
+let _daTaoBang = false;
+async function damBaoBangPhien() {
+  if (_daTaoBang) return;
+  _daTaoBang = true;
+  try {
+    await _runSql('CREATE TABLE IF NOT EXISTS tiktok_phien ( token TEXT PRIMARY KEY, cookie_ma_hoa TEXT NOT NULL, het_han INTEGER NOT NULL )', []);
+  } catch (e) { /* DB chưa sẵn — lần sau */ _daTaoBang = false; }
+}
 // ─── Đăng nhập bằng QR (quét bằng app TikTok trên điện thoại) ───────────────
 // FE: POST /tiktok/qr/start → {loginId}; hiện QR; poll GET /tiktok/qr/status
 // → done: {token} (phiên như createSession). Hết 150s không quét thì expired.
@@ -153,7 +166,7 @@ async function chayLogin(loginId) {
       }
       if (!url.includes('/login') || /sessionid|sid_tt|sid_guard|uid_tt/i.test(chuoi)) {
         if (/sessionid|sid_tt/i.test(chuoi)) {
-          const ses = createSession(chuoi);
+          const ses = await createSession(chuoi);
           rec.token = ses.token;
           rec.logged = ses.logged;
           rec.cookieCount = ses.cookieCount;
@@ -192,18 +205,42 @@ function parseCookieString(s) {
     return { name, value, domain: '.tiktok.com', path: '/' };
   }).filter(Boolean);
 }
-function createSession(cookieString) {
+async function createSession(cookieString) {
   const list = parseCookieString(cookieString);
   if (list.length < 3) throw new Error('Cookie quá ngắn — copy cả chuỗi document.cookie trên tiktok.com');
   const token = require('crypto').randomBytes(16).toString('hex');
-  _sessions.set(token, { cookieString: String(cookieString), exp: Date.now() + 1000 * 60 * 60 * 24 });
+  const exp = Date.now() + 1000 * 60 * 60 * 24 * 30; // 30 ngày (lưu DB, qua restart/deploy)
+  _sessions.set(token, { cookieString: String(cookieString), exp });
   if (_sessions.size > 100) _sessions.delete(_sessions.keys().next().value);
+  try {
+    await damBaoBangPhien();
+    const maHoa = _cryptoKeys ? _cryptoKeys.encryptKey(String(cookieString)) : String(cookieString);
+    await _runSql(
+      'INSERT INTO tiktok_phien (token, cookie_ma_hoa, het_han) VALUES (?, ?, ?)',
+      [token, maHoa, exp]
+    ).catch(async () => {
+      await _runSql('UPDATE tiktok_phien SET cookie_ma_hoa = ?, het_han = ? WHERE token = ?', [maHoa, exp, token]);
+    });
+  } catch (e) { /* DB lỗi thì phiên chỉ sống trong RAM */ }
   return { token, cookieCount: list.length, logged: /sessionid|sid_tt|sid_guard/i.test(String(cookieString)) };
 }
-function getSession(token) {
-  const s = _sessions.get(String(token || ''));
-  if (!s || s.exp < Date.now()) return null;
-  return s;
+async function getSession(token) {
+  const key = String(token || '');
+  if (!key) return null;
+  const nho = _sessions.get(key);
+  if (nho && nho.exp > Date.now()) return nho;
+  try {
+    await damBaoBangPhien();
+    const hang = await _getRow('SELECT cookie_ma_hoa, het_han FROM tiktok_phien WHERE token = ?', [key]);
+    if (!hang || !hang.het_han || Number(hang.het_han) < Date.now()) return null;
+    let chuoi = hang.cookie_ma_hoa;
+    if (_cryptoKeys && String(chuoi).startsWith('enc:v1:')) {
+      try { chuoi = _cryptoKeys.decryptKey(chuoi); } catch (e) { return null; }
+    }
+    const ses = { cookieString: chuoi, exp: Number(hang.het_han) };
+    _sessions.set(key, ses);
+    return ses;
+  } catch (e) { return null; }
 }
 // Thử tải trực tiếp playAddr bằng cookie đăng nhập (CDN nới tay với nick thật)
 async function fetchDirect(playAddr, cookieString, range) {
@@ -287,7 +324,7 @@ async function fetchFeed({ user, tag, foryou, session, limit = 20 } = {}) {
   if (!u && !h && !fy) throw new Error('Chọn nguồn: Dành cho bạn, @username hoặc #hashtag');
   const pageUrl = fy ? 'https://www.tiktok.com/foryou' : (u ? `https://www.tiktok.com/@${u}` : `https://www.tiktok.com/tag/${h}`);
   const maxItems = Math.min(30, Math.max(1, parseInt(limit, 10) || 20));
-  const ses = getSession(session);
+  const ses = await getSession(session);
   const cookieList = ses ? parseCookieString(ses.cookieString) : [];
 
   // TikTok chập chờn (bot wall theo IP/lượt) → 1 lượt duy nhất (~60s, proxy cắt

@@ -2422,7 +2422,7 @@ router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req
     return res.status(400).json({ success: false, error: 'Thiếu id video' });
   }
   const playAddr = String(req.query.u || '');
-  const ses = tiktokService.getSession(req.query.session);
+  const ses = await tiktokService.getSession(req.query.session);
   const pipeVe = async (upstream) => {
     res.status(upstream.status);
     const passthrough = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
@@ -2464,7 +2464,7 @@ router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req
 // FE giữ token trong localStorage, gửi kèm feed/media để lướt nick thật.
 router.post('/tiktok/session', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) => {
   try {
-    const data = tiktokService.createSession((req.body || {}).cookies);
+    const data = await tiktokService.createSession((req.body || {}).cookies);
     res.json({ success: true, ...data });
   } catch (e) {
     res.status(400).json({ success: false, error: (e.message || 'session lỗi').toString().slice(0, 200) });
