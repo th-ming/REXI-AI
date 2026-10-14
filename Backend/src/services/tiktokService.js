@@ -80,9 +80,10 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
   const pageUrl = u ? `https://www.tiktok.com/@${u}` : `https://www.tiktok.com/tag/${h}`;
   const maxItems = Math.min(30, Math.max(1, parseInt(limit, 10) || 20));
 
-  // TikTok chập chờn (bot wall theo IP/lượt) → thử tối đa 3 lần, mỗi lần browser mới
+  // TikTok chập chờn (bot wall theo IP/lượt) → thử tối đa 2 lần, mỗi lần browser mới.
+  // Mỗi lượt tối đa ~60s (proxy cắt kết nối chờ lâu) — FE bấm "Tải lại" để thử tiếp.
   let lastErr = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       return await serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h));
     } catch (e) {
@@ -133,7 +134,7 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
 
       await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
       let items = await layItemDauTien();
-      const han = Date.now() + 60000;
+      const han = Date.now() + 30000;
       let lanCuon = 0;
       while (!items && Date.now() < han) {
         await page.waitForTimeout(3000);
@@ -145,7 +146,7 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
       }
       if (!items) {
         await page.reload({ waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
-        const han2 = Date.now() + 45000;
+        const han2 = Date.now() + 25000;
         while (!items && Date.now() < han2) {
           await page.waitForTimeout(3000);
           items = await layItemDauTien();
