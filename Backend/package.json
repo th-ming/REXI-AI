@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "postinstall": "npx playwright install chromium",
+    "postinstall": "node scripts/rebuild-sqlite3-linux.js && npx playwright install chromium",
     "validate": "node scripts/validate-vietnamese.js",
     "guardian": "node scripts/code-guardian.js",
     "prestart": "node scripts/code-guardian.js",
