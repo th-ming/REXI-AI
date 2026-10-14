@@ -82,10 +82,14 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
 
   // TikTok chập chờn (bot wall theo IP/lượt) → 1 lượt duy nhất (~60s, proxy cắt
   // kết nối chờ lâu). Thất bại thì FE bấm "Tải lại" là 1 lượt mới (sạch browser).
+  // Chặn cứng 90s/lượt: quá giờ là bỏ, trả lỗi gọn thay vì treo tới khi proxy cắt.
   let lastErr = null;
   for (let attempt = 1; attempt <= 1; attempt++) {
     try {
-      return await serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h));
+      return await Promise.race([
+        serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Hết 90s chờ TikTok — thử bấm Tải lại')), 90000)),
+      ]);
     } catch (e) {
       lastErr = e;
       console.warn(`[TikTok] feed lần ${attempt} lỗi: ${(e.message || e).toString().slice(0, 120)}`);
@@ -126,7 +130,11 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
         for (const resp of apiHits) {
           if (resp._daDoc) continue;
           resp._daDoc = true;
-          const data = await resp.json().catch(() => null);
+          // response treo (không bao giờ xong) → bỏ qua sau 8s, không kẹt cả request
+          const data = await Promise.race([
+            resp.json().catch(() => null),
+            new Promise((r) => setTimeout(() => r(null), 8000)),
+          ]);
           if (data && Array.isArray(data.itemList) && data.itemList.length) return data.itemList;
         }
         return null;
