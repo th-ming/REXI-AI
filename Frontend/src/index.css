@@ -273,13 +273,12 @@ select {
   border-color: rgba(47, 98, 232, .35);
 }
 
-/* Nút "35+ Skills": nền SÁNG dùng xanh lá semantic (hợp với cam Super Tools + xanh dương chủ đạo; tím chỉ hợp nền tối) */
+/* Nút "35+ Skills": nền SÁNG giữ nguyên hệ remap của web (nền/viền xanh nhạt),
+   chỉ đổi chữ tím sang xanh brand cho đồng bộ nút Cuộc Trò Chuyện Mới */
 [data-theme="light"] .btn-skills {
-  background-color: rgba(5, 150, 105, .1) !important;
-  border-color: rgba(5, 150, 105, .35) !important;
-  color: #047857 !important;
+  color: #2349b8 !important;
 }
-[data-theme="light"] .btn-skills:hover { background-color: rgba(5, 150, 105, .18) !important; }
+[data-theme="light"] .btn-skills:hover { color: #1e40af !important; }
 
 /* Remap các utility tối hardcode → light (khỏi sửa 15 files) */
 [data-theme="light"] .text-slate-500 { color: #8a91a3; }
