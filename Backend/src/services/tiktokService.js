@@ -17,6 +17,14 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 const FEED_TIMEOUT = 35000;
 
+const TT_ARGS = [
+  '--disable-blink-features=AutomationControlled',
+  '--no-sandbox',
+  '--disable-dev-shm-usage', // container RAM nhỏ (/dev/shm bé → sập) — dùng /tmp thay
+  '--disable-gpu',
+  '--no-zygote',
+];
+
 // Serialize các lần scrape feed (mỗi lần launch 1 browser — free tier không chịu 2 browser song song)
 let _chain = Promise.resolve();
 function serialize(task) {
@@ -68,7 +76,7 @@ async function chayLogin(loginId) {
   const { chromium } = require('playwright');
   const browser = await chromium.launch({
     headless: true,
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+    args: TT_ARGS,
   });
   const han = Date.now() + QR_TIMEOUT;
   try {
@@ -256,7 +264,7 @@ async function scrapeOnce(pageUrl, maxItems, u, h, cookieList, fy) {
     const { chromium } = require('playwright');
     const browser = await chromium.launch({
       headless: true,
-      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+      args: TT_ARGS,
     });
     try {
       const ctx = await browser.newContext({
