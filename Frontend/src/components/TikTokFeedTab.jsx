@@ -163,7 +163,7 @@ export default function TikTokFeedTab({ showToast, active }) {
             setQrLogin(null);
             setSessionMsg('Lỗi mở QR: ' + (st.error || 'thử lại'));
           } else {
-            setQrLogin((q) => (q ? { ...q, qr: st.qr || q.qr, status: st.status } : q));
+            setQrLogin((q) => (q ? { ...q, qr: st.qr || q.qr, status: st.status, daQuet: st.daQuet } : q));
           }
         } catch (e) { /* poll lỗi thì thôi, lượt sau */ }
       }, 2000);
@@ -492,6 +492,9 @@ export default function TikTokFeedTab({ showToast, active }) {
                   <>
                     <img src={qrLogin.qr} alt="Mã QR đăng nhập TikTok" className="mx-auto rounded-xl border border-white/10 max-w-[220px]" />
                     <p className="text-[11px] text-slate-300">Mở app TikTok trên điện thoại → quét mã này → bấm <b>Xác nhận đăng nhập</b> trên điện thoại là tự vào</p>
+                    {qrLogin.daQuet && (
+                      <p className="text-[11px] font-semibold text-emerald-400">✓ Đã quét mã rồi! Bấm Xác nhận trên điện thoại đi là vào</p>
+                    )}
                   </>
                 ) : (
                   <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1.5">

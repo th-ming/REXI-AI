@@ -60,7 +60,7 @@ async function startLogin() {
     if (rec.status === 'waiting') return { loginId: id, qr: rec.qr, reused: true };
   }
   const loginId = require('crypto').randomBytes(8).toString('hex');
-  const rec = { status: 'starting', qr: null, token: null, logged: false, cookieCount: 0, error: null, exp: Date.now() + QR_TIMEOUT + 30000 };
+  const rec = { status: 'starting', qr: null, token: null, logged: false, cookieCount: 0, error: null, daQuet: false, exp: Date.now() + QR_TIMEOUT + 30000 };
   _logins.set(loginId, rec);
   if (_logins.size > 10) _logins.delete(_logins.keys().next().value);
   chayLogin(loginId).catch((e) => {
@@ -110,6 +110,11 @@ async function chayLogin(loginId) {
       const url = page.url();
       const cookies = await ctx.cookies('https://www.tiktok.com').catch(() => []);
       const chuoi = cookies.map((c) => c.name + '=' + c.value).join('; ');
+      if (!rec.daQuet) {
+        // Đã quét mã thì trang đổi chữ sang chờ xác nhận — báo cho user biết
+        const chu = await page.evaluate(() => document.body.innerText.slice(0, 2000)).catch(() => '');
+        if (/xác nhận|confirm|verify it.s you|đăng nhập trên thiết bị/i.test(chu)) rec.daQuet = true;
+      }
       if (!url.includes('/login') || /sessionid|sid_tt|sid_guard|uid_tt/i.test(chuoi)) {
         if (/sessionid|sid_tt/i.test(chuoi)) {
           const ses = createSession(chuoi);
@@ -133,7 +138,7 @@ async function chayLogin(loginId) {
 function loginStatus(loginId) {
   const r = _logins.get(String(loginId || ''));
   if (!r) return { status: 'unknown' };
-  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error };
+  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error, daQuet: !!r.daQuet };
 }
 function parseCookieString(s) {
   return String(s || '').split(/;\s*/).map((p) => {
