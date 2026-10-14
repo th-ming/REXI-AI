@@ -2482,7 +2482,9 @@ router.post('/tiktok/qr/start', rateLimit({ windowMs: 60000, max: 120 }), async 
   }
 });
 router.get('/tiktok/qr/status', rateLimit({ windowMs: 60000, max: 120 }), async (req, res) => {
-  res.json({ success: true, ...tiktokService.loginStatus(req.query.loginId) });
+  const st = tiktokService.loginStatus(req.query.loginId);
+  if (req.query.anh !== '1') delete st.anhTrangThai;
+  res.json({ success: true, ...st });
 });
 
 // AI nhìn frame → video có khớp chủ đề user muốn không? (vision route của modelRouter)

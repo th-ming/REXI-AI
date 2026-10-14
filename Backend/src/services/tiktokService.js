@@ -23,6 +23,16 @@ const TT_ARGS = [
   '--disable-dev-shm-usage', // container RAM nhỏ (/dev/shm bé → sập) — dùng /tmp thay
   '--disable-gpu',
   '--no-zygote',
+  // Giảm RAM cho máy free 512MB (Render): 1 tiến trình render + heap JS nhỏ,
+  // tắt dịch vụ nền không cần cho scrape.
+  '--no-first-run',
+  '--disable-extensions',
+  '--disable-background-networking',
+  '--disable-sync',
+  '--disable-default-apps',
+  '--mute-audio',
+  '--renderer-process-limit=1',
+  '--js-flags=--max-old-space-size=128',
 ];
 
 // Serialize các lần scrape feed (mỗi lần launch 1 browser — free tier không chịu 2 browser song song)
@@ -44,6 +54,25 @@ async function choRanh(gioiHanMs) {
   const han = Date.now() + gioiHanMs;
   while (_viecNang > 0 && Date.now() < han) await new Promise((r) => setTimeout(r, 2000));
   if (_viecNang > 0) throw new Error('Máy đang bận tải feed — thử mở mã lại sau 1 phút');
+}
+
+// ─── Chính sách RAM cho máy free (Render 512MB) ─────────────────────────────
+// Giữ browser QR "hâm nóng" thường trực + mở browser thứ 2 khi tải feed = 2
+// chromium cùng lúc → OOM giết cả tiến trình backend (cả app sập, mọi API 502).
+// => MẶC ĐỊNH TẮT hâm nóng ở production; chỉ bật khi máy đủ RAM (TIKTOK_WARM_QR=1).
+const WARM_QR = process.env.TIKTOK_WARM_QR === '1'
+  || (process.env.TIKTOK_WARM_QR !== '0' && process.env.NODE_ENV !== 'production');
+// Trên ngưỡng này thì KHÔNG mở thêm browser (thà báo bận còn hơn OOM sập app).
+// RSS của tiến trình Node là chỉ báo; chromium là process con (không tính vào đây)
+// nên ngưỡng đặt thấp hơn 512MB để còn chỗ cho browser con.
+const RAM_MB = parseInt(process.env.TIKTOK_RAM_LIMIT_MB, 10) || 350;
+function ramCao() {
+  const mb = Math.round(process.memoryUsage().rss / 1048576);
+  if (mb > RAM_MB) {
+    console.warn(`[TikTok] RAM Node ${mb}MB > ${RAM_MB}MB — bỏ mở browser để tránh OOM sập app`);
+    return true;
+  }
+  return false;
 }
 
 function cleanUser(u) {
@@ -85,6 +114,11 @@ const QR_TIMEOUT = 150000;
 // Giữ đúng 1 browser + 1 trang login; chết thì lần sau mở lại (đường chậm cũ).
 let _qrNong = null;
 let _nongDangChay = null; // single-flight: chống mở 2 browser hâm cùng lúc (hết RAM sập máy)
+// Đóng browser QR "hâm nóng" để NHƯỜNG RAM cho việc khác (tải feed, video...) — tránh 2 chromium cùng lúc
+async function dongQrNong() {
+  const nong = _qrNong; _qrNong = null;
+  if (nong && nong.browser) { try { await nong.browser.close(); } catch (e) { /* bỏ qua */ } }
+}
 async function layTrangQrNong() {
   if (_qrNong && _qrNong.page && !_qrNong.page.isClosed()) return _qrNong;
   if (_nongDangChay) return _nongDangChay;
@@ -112,12 +146,15 @@ async function layTrangQrNong() {
   }
 }
 // (Không tải nền liên tục — tốn RAM/CPU làm sập máy free; mã mới khi cần)
-// Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot; chờ máy rảnh mới hâm)
-setTimeout(() => {
-  (async () => {
-    try { await choRanh(90000); await layTrangQrNong(); } catch (e) { _qrNong = null; }
-  })();
-}, 20000);
+// Hâm sẵn sau khi server lên 20s — CHỈ khi máy đủ RAM (WARM_QR). Trên Render
+// 512MB giữ browser thường trực sẽ OOM sập app → tắt, mở theo nhu cầu.
+if (WARM_QR) {
+  setTimeout(() => {
+    (async () => {
+      try { await choRanh(90000); if (!ramCao()) await layTrangQrNong(); } catch (e) { _qrNong = null; }
+    })();
+  }, 20000);
+}
 
 async function startLogin() {
   for (const [id, rec] of _logins) {
@@ -140,10 +177,12 @@ async function chayLogin(loginId) {
   // Ưu tiên trang hâm sẵn (bấm là có mã ngay); hỏng thì mở browser riêng
   let browser = null;
   let dungChung = false;
+  let giuCho = false; // browser QR riêng có đang chiếm slot browser nặng không
   let ctx = null;
   let page = null;
   try {
     try {
+      if (!WARM_QR) throw new Error('warm-off');
       const nong = await layTrangQrNong();
       page = nong.page; ctx = nong.ctx; dungChung = true;
       // Trang nóng còn mới (<75s) thì chụp luôn khỏi tải lại (nhanh nhất);
@@ -156,11 +195,13 @@ async function chayLogin(loginId) {
     } catch (eNong) {
       // Đường chậm cũ: mở browser riêng — nhưng CHỜ máy rảnh trước (không 2 browser cùng lúc)
       await choRanh(45000);
+      if (ramCao()) throw new Error('Máy chủ đang bận (RAM cao) — thử mở mã lại sau ít phút');
       const { chromium } = require('playwright');
       browser = await chromium.launch({
         headless: true,
         args: TT_ARGS,
       });
+      _viecNang++; giuCho = true; // chiếm slot: chặn feed mở browser thứ 2 khi QR đang mở (OOM)
       ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
       // Chặn ảnh/media/font cho nhẹ (mã QR là khung canvas, không phải thẻ ảnh;
       // nếu khung chụp ra quá bé thì chụp cả trang bù)
@@ -229,7 +270,15 @@ async function chayLogin(loginId) {
       const chu = await page.evaluate(() => document.body.innerText.slice(0, 2000)).catch(() => '');
       if (!rec.daQuet) {
         // Đã quét mã thì trang đổi chữ sang chờ xác nhận — báo cho user biết
-        if (/xác nhận|confirm|verify it.s you|đăng nhập trên thiết bị/i.test(chu)) rec.daQuet = true;
+        if (/xác nhận|confirm|verify it.s you|đăng nhập trên thiết bị/i.test(chu)) {
+          rec.daQuet = true;
+          // Chụp trạng thái trang lúc này để chẩn đoán (kẹt captcha/xác minh gì)
+          try {
+            const shot = await page.screenshot({ type: 'jpeg', quality: 40 }).catch(() => null);
+            if (shot) rec.anhTrangThai = 'data:image/jpeg;base64,' + shot.toString('base64');
+          } catch (eShot) {}
+          rec.chuTrangThai = chu.slice(0, 300);
+        }
       }
       const maHong = /hết hạn|expired|không thể đăng nhập|thử.*cách khác|try.*other|refresh.*qr|làm mới/i.test(chu);
       const maCu = !rec.daQuet && Date.now() - qrLuc > 55000;
@@ -252,6 +301,7 @@ async function chayLogin(loginId) {
   } finally {
     // Trang dùng chung thì KHÔNG đóng browser (giữ hâm cho lần sau)
     if (!dungChung && browser) await browser.close().catch(() => {});
+    if (giuCho) { giuCho = false; _viecNang--; }
     const r = _logins.get(loginId);
     if (r && r.status === 'waiting') r.status = 'expired';
     setTimeout(() => _logins.delete(loginId), 60000);
@@ -260,13 +310,14 @@ async function chayLogin(loginId) {
     const r = _logins.get(loginId);
     if (r && r.status !== 'done') { r.status = 'error'; r.error = String((eNgoai && eNgoai.message) || eNgoai).slice(0, 150); }
     if (!dungChung && browser) await browser.close().catch(() => {});
+    if (giuCho) { giuCho = false; _viecNang--; }
   }
 }
 
 function loginStatus(loginId) {
   const r = _logins.get(String(loginId || ''));
   if (!r) return { status: 'unknown' };
-  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error, daQuet: !!r.daQuet, dangDoiMa: !!r.dangDoiMa };
+  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error, daQuet: !!r.daQuet, dangDoiMa: !!r.dangDoiMa, chuTrangThai: r.chuTrangThai || '', coAnhTrangThai: !!r.anhTrangThai, anhTrangThai: r.anhTrangThai || null };
 }
 function parseCookieString(s) {
   return String(s || '').split(/;\s*/).map((p) => {
@@ -406,8 +457,10 @@ async function fetchFeed({ user, tag, foryou, session, limit = 20 } = {}) {
   let lastErr = null;
   for (let attempt = 1; attempt <= 1; attempt++) {
     try {
+      // Chờ QR/login nhả browser trước (không 2 chromium cùng lúc → OOM sập app)
+      await choRanh(20000);
       return await Promise.race([
-        serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h, cookieList, fy)),
+        serialize(async () => { await dongQrNong(); return scrapeOnce(pageUrl, maxItems, u || '', h, cookieList, fy); }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Hết 90s chờ TikTok — thử bấm Tải lại')), 90000)),
       ]);
     } catch (e) {
@@ -420,6 +473,7 @@ async function fetchFeed({ user, tag, foryou, session, limit = 20 } = {}) {
 }
 
 async function scrapeOnce(pageUrl, maxItems, u, h, cookieList, fy) {
+    if (ramCao()) throw new Error('Máy chủ đang bận (RAM cao) — thử lại sau ít phút');
     const { chromium } = require('playwright');
     const browser = await chromium.launch({
       headless: true,
