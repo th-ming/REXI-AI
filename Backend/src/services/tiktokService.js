@@ -102,8 +102,7 @@ setInterval(async () => {
     await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 12000 }).catch(() => {});
     _qrNong.maMoiLuc = Date.now();
   } catch (e) { /* kệ, lần sau */ }
-}, 45000).unref?.();
-}
+}, 45000);
 // Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot)
 setTimeout(() => { layTrangQrNong().catch(() => { _qrNong = null; }); }, 20000);
 

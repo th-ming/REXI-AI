@@ -533,21 +533,6 @@ export default function TikTokFeedTab({ showToast, active }) {
                 >
                   {dangMoQr ? 'Đang mở mã...' : 'Đăng nhập bằng QR'}
                 </button>
-                <details className="text-[10px] text-slate-500">
-                  <summary className="cursor-pointer hover:text-slate-300">Cách khác: dán cookie thủ công</summary>
-                  <textarea
-                    value={cookieText} onChange={(e) => setCookieText(e.target.value)} rows={2}
-                    placeholder="Dán chuỗi document.cookie ở đây..."
-                    className="mt-1.5 w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40 resize-y"
-                  />
-                  <button
-                    onClick={connectNick}
-                    className="mt-1 w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 text-xs font-medium hover:bg-white/10"
-                  >
-                    Kết nối
-                  </button>
-                  <p className="mt-1 leading-relaxed">Mở tiktok.com (đã đăng nhập) → F12 → Console → gõ document.cookie → copy dán vào đây.</p>
-                </details>
               </>
             )}
             {sessionMsg && <p className="text-[10px] text-amber-400">{sessionMsg}</p>}
