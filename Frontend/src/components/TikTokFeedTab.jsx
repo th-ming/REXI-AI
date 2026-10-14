@@ -122,7 +122,9 @@ export default function TikTokFeedTab({ showToast, active }) {
   const [sessionMsg, setSessionMsg] = useState('');
   // Đăng nhập bằng QR (quét bằng app TikTok trên điện thoại)
   const [qrLogin, setQrLogin] = useState(null); // {loginId, qr, status}
+  const [dangMoQr, setDangMoQr] = useState(false); // khóa nút khi đang mở mã
   const qrTimer = useRef(null);
+  const dangMoQrRef = useRef(false);
 
   const luuPhien = useCallback((data) => {
     setSessionToken(data.token);
@@ -135,10 +137,15 @@ export default function TikTokFeedTab({ showToast, active }) {
   }, []);
 
   const startQr = useCallback(async () => {
+    if (dangMoQrRef.current) return; // chặn bấm liên tiếp
+    dangMoQrRef.current = true;
+    setDangMoQr(true);
     setSessionMsg('Đang mở mã QR...');
     try {
       const data = await apiFetchPublic('/services/tiktok/qr/start', { method: 'POST', body: '{}' });
       if (!data.success) throw new Error(data.error || 'Không mở được QR');
+      dangMoQrRef.current = false;
+      setDangMoQr(false);
       if (data.qr) {
         setQrLogin({ loginId: data.loginId, qr: data.qr, status: 'waiting' });
         setSessionMsg('');
@@ -168,6 +175,8 @@ export default function TikTokFeedTab({ showToast, active }) {
         } catch (e) { /* poll lỗi thì thôi, lượt sau */ }
       }, 2000);
     } catch (e) {
+      dangMoQrRef.current = false;
+      setDangMoQr(false);
       setSessionMsg('Lỗi: ' + (e.message || 'không mở được QR'));
     }
   }, [luuPhien]);
@@ -514,10 +523,10 @@ export default function TikTokFeedTab({ showToast, active }) {
             ) : (
               <>
                 <button
-                  onClick={startQr}
-                  className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium"
+                  onClick={startQr} disabled={dangMoQr}
+                  className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium disabled:opacity-50"
                 >
-                  Đăng nhập bằng QR
+                  {dangMoQr ? 'Đang mở mã...' : 'Đăng nhập bằng QR'}
                 </button>
                 <details className="text-[10px] text-slate-500">
                   <summary className="cursor-pointer hover:text-slate-300">Cách khác: dán cookie thủ công</summary>

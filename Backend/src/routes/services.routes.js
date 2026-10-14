@@ -2473,7 +2473,7 @@ router.post('/tiktok/session', rateLimit({ windowMs: 60000, max: 30 }), async (r
 
 // Đăng nhập bằng QR: start → {loginId} (mở browser nền, chụp QR); FE hiện QR,
 // poll status mỗi 3s → done kèm {token} phiên nick thật.
-router.post('/tiktok/qr/start', rateLimit({ windowMs: 60000, max: 10 }), async (req, res) => {
+router.post('/tiktok/qr/start', rateLimit({ windowMs: 60000, max: 120 }), async (req, res) => {
   try {
     const data = await tiktokService.startLogin();
     res.json({ success: true, ...data });
