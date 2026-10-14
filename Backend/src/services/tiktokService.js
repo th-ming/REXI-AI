@@ -143,26 +143,58 @@ async function chayLogin(loginId) {
   const han = Date.now() + QR_TIMEOUT;
   try {
     // Chờ khung mã QR hiện rồi chụp ngay
-    const khungQr = page.locator('canvas, img[src*="qr" i], div[class*="qr" i] canvas').first();
-    await khungQr.waitFor({ timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(1200); // cho mã render nét
-    // Chụp mã QR (ưu tiên đúng khung QR, rớt thì cả trang)
-    let anh = await khungQr.screenshot().catch(() => null);
-    if ((!anh || anh.length < 2000) && !page.isClosed()) anh = await page.screenshot().catch(() => null);
+    const chupMaQr = async () => {
+      const khungQr = page.locator('canvas, img[src*="qr" i], div[class*="qr" i] canvas').first();
+      await khungQr.waitFor({ timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(1200); // cho mã render nét
+      // Chụp mã QR (ưu tiên đúng khung QR, rớt thì cả trang)
+      let anh = await khungQr.screenshot().catch(() => null);
+      if ((!anh || anh.length < 2000) && !page.isClosed()) anh = await page.screenshot().catch(() => null);
+      return anh;
+    };
+    const bamChonQr = async () => {
+      await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 15000 }).catch(() => {});
+    };
+    let anh = await chupMaQr();
     if (!anh) throw new Error('Không chụp được mã QR');
     rec.qr = 'data:image/png;base64,' + anh.toString('base64');
     rec.status = 'waiting';
     // Chờ user quét + XÁC NHẬN trên điện thoại: đăng nhập xong là có cookie
-    // sessionid/sid_tt (rời trang login) → gom cookie thành phiên
+    // sessionid/sid_tt (rời trang login) → gom cookie thành phiên.
+    // Mã bị từ chối/hết hạn (TikTok báo "không thể đăng nhập bằng phương thức
+    // này / thử cách khác") → tự lấy mã MỚI ngay, tối đa 4 lần.
+    let soLanDoiMa = 0;
+    let lanCuoiKiemMa = 0;
     while (Date.now() < han) {
       await page.waitForTimeout(3000);
       const url = page.url();
       const cookies = await ctx.cookies('https://www.tiktok.com').catch(() => []);
       const chuoi = cookies.map((c) => c.name + '=' + c.value).join('; ');
+      const chu = await page.evaluate(() => document.body.innerText.slice(0, 2000)).catch(() => '');
       if (!rec.daQuet) {
         // Đã quét mã thì trang đổi chữ sang chờ xác nhận — báo cho user biết
-        const chu = await page.evaluate(() => document.body.innerText.slice(0, 2000)).catch(() => '');
         if (/xác nhận|confirm|verify it.s you|đăng nhập trên thiết bị/i.test(chu)) rec.daQuet = true;
+      }
+      if (Date.now() - lanCuoiKiemMa > 12000) {
+        lanCuoiKiemMa = Date.now();
+        if (/hết hạn|expired|không thể đăng nhập|thử.*cách khác|try.*other|refresh.*qr|làm mới/i.test(chu)) {
+          if (soLanDoiMa >= 4) { rec.error = 'TikTok từ chối mã QR nhiều lần — thử lại sau hoặc dán cookie'; break; }
+          soLanDoiMa++;
+          rec.daQuet = false;
+          rec.dangDoiMa = true;
+          try {
+            const nut = page.getByText(/làm mới|refresh/i).first();
+            if (await nut.count().catch(() => 0)) await nut.click({ timeout: 8000 }).catch(() => {});
+            else {
+              await page.reload({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+              await bamChonQr();
+            }
+            const moi = await chupMaQr();
+            if (moi && moi.length > 2000) rec.qr = 'data:image/png;base64,' + moi.toString('base64');
+          } catch (eDoi) { /* giữ mã cũ, lượt sau thử tiếp */ }
+          rec.dangDoiMa = false;
+          continue;
+        }
       }
       if (!url.includes('/login') || /sessionid|sid_tt|sid_guard|uid_tt/i.test(chuoi)) {
         if (/sessionid|sid_tt/i.test(chuoi)) {
@@ -193,7 +225,7 @@ async function chayLogin(loginId) {
 function loginStatus(loginId) {
   const r = _logins.get(String(loginId || ''));
   if (!r) return { status: 'unknown' };
-  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error, daQuet: !!r.daQuet };
+  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error, daQuet: !!r.daQuet, dangDoiMa: !!r.dangDoiMa };
 }
 function parseCookieString(s) {
   return String(s || '').split(/;\s*/).map((p) => {
