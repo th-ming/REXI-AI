@@ -400,11 +400,11 @@ function isKnownAgentCapable(modelId) {
   if (m.includes('command-r') || m.includes('command-a')) return true;
   if (m.includes('llama-3.1') || m.includes('llama-3.2') || m.includes('llama-3.3') || m.includes('llama-4')) return true;
   if (m.includes('nemotron') || m.includes('nemotron-3')) return true;
-  if (m.includes('deepseek-v3') || m.includes('deepseek-r1')) return true;
+  if (m.includes('deepseek-v3') || m.includes('deepseek-v4') || m.includes('deepseek-r1')) return true;
   if (m.includes('qwen-2.5') || m.includes('qwen-3') || m.includes('qwen2.5') || m.includes('qwen3')) return true;
   if (m.includes('yi-1.5') || m.includes('yi-34b') || m.includes('yi-large')) return true;
   if (m.includes('glm-4') || m.includes('glm-4.5') || m.includes('glm-5')) return true;
-  if (m.includes('kimi') || m.includes('moonshot')) return true;
+  if (m.includes('kimi') || m.includes('moonshot') || m.includes('muse') || m.includes('laguna')) return true;
   if (m.includes('doubao') || m.includes('deepseek-coder')) return true;
   return false;
 }
@@ -825,7 +825,7 @@ async function scanProvider(providerId) {
   // dung ngay khi fuse/429, model chua probe bao gio test truoc. Bo qua neu health phase da fuse.
   try {
     if (!quotaFuse) {
-      const AGENT_TTL = 30 * 24 * 3600 * 1000, AGENT_CAP = 8;
+      const AGENT_TTL = 30 * 24 * 3600 * 1000, AGENT_CAP = 20;
       const probed = await allRows('SELECT ma_model, thoi_gian_test FROM model_agent_cap WHERE ma_nha_cung_cap = ?', [providerId]);
       const probedMap = new Map((probed || []).map(r => [String(r.ma_model), toTimeMs(r.thoi_gian_test)]));
       const now2 = Date.now();
