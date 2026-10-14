@@ -210,6 +210,15 @@ export default function TikTokFeedTab({ showToast }) {
     }
   }, [pushLog, scheduleSkip]);
 
+  // Video lỗi mạng (không tải được) → ghi log + tự lướt, không kẹt spinner
+  const handleVideoError = useCallback((video) => {
+    setCdnErr((s) => ({ ...s, [video.id]: true }));
+    const entry = { match: false, reason: 'không tải được video', via: 'net' };
+    setVerdicts((s) => ({ ...s, [video.id]: entry }));
+    pushLog(video, entry);
+    scheduleSkip(video.id);
+  }, [pushLog, scheduleSkip]);
+
   // ── Tải feed ──
   const loadFeed = useCallback(async () => {
     if (src === 'user' && !srcUser.trim()) { setError('Nhập @username'); return; }
@@ -487,7 +496,7 @@ export default function TikTokFeedTab({ showToast }) {
                           video={v} active={i === idx} session={sessionToken}
                           onRef={(el) => { videoEls.current[v.id] = el; }}
                           onTime={handleTime}
-                          onError={(vid) => setCdnErr((s) => ({ ...s, [vid.id]: true }))}
+                          onError={handleVideoError}
                         />
                       ) : (                        <div className="w-full h-full flex items-center justify-center bg-black">
                           {v.cover && !cdnErr[v.id] ? (
