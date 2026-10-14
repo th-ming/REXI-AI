@@ -273,6 +273,14 @@ select {
   border-color: rgba(47, 98, 232, .35);
 }
 
+/* Nút "35+ Skills": nền SÁNG dùng xanh brand (tím chỉ hợp nền tối) */
+[data-theme="light"] .btn-skills {
+  background-color: rgba(47, 98, 232, .1) !important;
+  border-color: rgba(47, 98, 232, .4) !important;
+  color: #2349b8 !important;
+}
+[data-theme="light"] .btn-skills:hover { background-color: rgba(47, 98, 232, .18) !important; }
+
 /* Remap các utility tối hardcode → light (khỏi sửa 15 files) */
 [data-theme="light"] .text-slate-500 { color: #8a91a3; }
 [data-theme="light"] .text-slate-400 { color: #5b6470; }

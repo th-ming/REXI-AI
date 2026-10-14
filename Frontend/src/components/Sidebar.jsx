@@ -131,7 +131,7 @@ export default function Sidebar({
       <div className="grid grid-cols-2 gap-2 px-3 mt-2">
         <button
           onClick={() => setSkillsOpen(true)}
-          className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:text-white text-[11px] font-medium transition-all"
+          className="btn-skills flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:text-white text-[11px] font-medium transition-all"
         >
           <Layers size={13} /> {t(lang, 'skillsBtn')}
         </button>

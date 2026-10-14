@@ -55,6 +55,28 @@ const _sessions = new Map(); // token -> { cookieString, exp }
 const _logins = new Map(); // loginId -> { status, qr, token, logged, cookieCount, error }
 const QR_TIMEOUT = 150000;
 
+// Trình duyệt QR chạy nền sẵn (hâm nóng): bấm là chụp mã ngay, khỏi chờ mở mới.
+// Giữ đúng 1 browser + 1 trang login; chết thì lần sau mở lại (đường chậm cũ).
+let _qrNong = null;
+async function layTrangQrNong() {
+  if (_qrNong && _qrNong.page && !_qrNong.page.isClosed()) return _qrNong;
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({ headless: true, args: TT_ARGS });
+  const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
+  await ctx.route('**/*', (route) => {
+    const type = route.request().resourceType();
+    if (type === 'image' || type === 'media' || type === 'font') return route.abort();
+    return route.continue();
+  }).catch(() => {});
+  const page = await ctx.newPage();
+  _qrNong = { browser, ctx, page };
+  await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+  await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 15000 }).catch(() => {});
+  return _qrNong;
+}
+// Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot)
+setTimeout(() => { layTrangQrNong().catch(() => { _qrNong = null; }); }, 20000);
+
 async function startLogin() {
   for (const [id, rec] of _logins) {
     if (rec.status === 'waiting') return { loginId: id, qr: rec.qr, reused: true };
@@ -73,26 +95,40 @@ async function startLogin() {
 async function chayLogin(loginId) {
   const rec = _logins.get(loginId);
   if (!rec) return;
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch({
-    headless: true,
-    args: TT_ARGS,
-  });
+  // Ưu tiên trang hâm sẵn (bấm là có mã ngay); hỏng thì mở browser riêng
+  let browser = null;
+  let dungChung = false;
+  let ctx = null;
+  let page = null;
+  try {
+    try {
+      const nong = await layTrangQrNong();
+      page = nong.page; ctx = nong.ctx; dungChung = true;
+      // Tải mới mã QR trên trang nóng (mã cũ có thể hết hạn)
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+      await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 15000 }).catch(() => {});
+    } catch (eNong) {
+      const { chromium } = require('playwright');
+      browser = await chromium.launch({
+        headless: true,
+        args: TT_ARGS,
+      });
+      ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
+      // Chặn ảnh/media/font cho nhẹ (mã QR là khung canvas, không phải thẻ ảnh;
+      // nếu khung chụp ra quá bé thì chụp cả trang bù)
+      await ctx.route('**/*', (route) => {
+        const type = route.request().resourceType();
+        if (type === 'image' || type === 'media' || type === 'font') return route.abort();
+        return route.continue();
+      }).catch(() => {});
+      page = await ctx.newPage();
+      await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+      // Chờ trang login hiện (theo tín hiệu, không chờ cứng) rồi bấm mục "mã QR"
+      await page.getByText(/mã QR|QR Code/i).first().waitFor({ timeout: 25000 }).catch(() => {});
+      await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 8000 }).catch(() => {});
+    }
   const han = Date.now() + QR_TIMEOUT;
   try {
-    const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
-    // Chặn ảnh/media/font cho nhẹ (mã QR là khung canvas, không phải thẻ ảnh;
-    // nếu khung chụp ra quá bé thì chụp cả trang bù)
-    await ctx.route('**/*', (route) => {
-      const type = route.request().resourceType();
-      if (type === 'image' || type === 'media' || type === 'font') return route.abort();
-      return route.continue();
-    }).catch(() => {});
-    const page = await ctx.newPage();
-    await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
-    // Chờ trang login hiện (theo tín hiệu, không chờ cứng) rồi bấm mục "mã QR"
-    await page.getByText(/mã QR|QR Code/i).first().waitFor({ timeout: 25000 }).catch(() => {});
-    await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 8000 }).catch(() => {});
     // Chờ khung mã QR hiện rồi chụp ngay
     const khungQr = page.locator('canvas, img[src*="qr" i], div[class*="qr" i] canvas').first();
     await khungQr.waitFor({ timeout: 20000 }).catch(() => {});
@@ -128,10 +164,16 @@ async function chayLogin(loginId) {
     }
     rec.status = 'expired';
   } finally {
-    await browser.close().catch(() => {});
+    // Trang dùng chung thì KHÔNG đóng browser (giữ hâm cho lần sau)
+    if (!dungChung && browser) await browser.close().catch(() => {});
     const r = _logins.get(loginId);
     if (r && r.status === 'waiting') r.status = 'expired';
     setTimeout(() => _logins.delete(loginId), 60000);
+  }
+  } catch (eNgoai) {
+    const r = _logins.get(loginId);
+    if (r && r.status !== 'done') { r.status = 'error'; r.error = String((eNgoai && eNgoai.message) || eNgoai).slice(0, 150); }
+    if (!dungChung && browser) await browser.close().catch(() => {});
   }
 }
 
