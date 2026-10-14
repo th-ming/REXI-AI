@@ -103,13 +103,14 @@ async function chayLogin(loginId) {
     if (!anh) throw new Error('Không chụp được mã QR');
     rec.qr = 'data:image/png;base64,' + anh.toString('base64');
     rec.status = 'waiting';
-    // Chờ user quét: đăng nhập xong là có cookie sessionid + rời trang login
+    // Chờ user quét + XÁC NHẬN trên điện thoại: đăng nhập xong là có cookie
+    // sessionid/sid_tt (rời trang login) → gom cookie thành phiên
     while (Date.now() < han) {
       await page.waitForTimeout(3000);
       const url = page.url();
       const cookies = await ctx.cookies('https://www.tiktok.com').catch(() => []);
       const chuoi = cookies.map((c) => c.name + '=' + c.value).join('; ');
-      if (!url.includes('/login') || /sessionid|sid_tt/i.test(chuoi)) {
+      if (!url.includes('/login') || /sessionid|sid_tt|sid_guard|uid_tt/i.test(chuoi)) {
         if (/sessionid|sid_tt/i.test(chuoi)) {
           const ses = createSession(chuoi);
           rec.token = ses.token;

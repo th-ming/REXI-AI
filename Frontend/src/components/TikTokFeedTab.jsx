@@ -94,12 +94,14 @@ function FeedVideo({ video, active, session, onRef, onTime, onError }) {
   );
 }
 
-export default function TikTokFeedTab({ showToast }) {
+export default function TikTokFeedTab({ showToast, active }) {
   const lang = getLang();
   const [panelOpen, setPanelOpen] = useState(true);
+  const [src, setSrc] = useState('foryou');
   const [srcUser, setSrcUser] = useState('');
   const [srcTag, setSrcTag] = useState('');
-  const [limit, setLimit] = useState(15);
+  // Lướt vô hạn như TikTok thật: không hỏi số lượng, gần hết tự tải thêm
+  const BATCH = 12;
   const [topicsText, setTopicsText] = useState('váy\nđầm xinh\nmèo cute');
   const [mode, setMode] = useState('both');
 
@@ -111,8 +113,6 @@ export default function TikTokFeedTab({ showToast }) {
   const [skipLog, setSkipLog] = useState([]);     // {id, caption, match, reason, via, at}
   const [endReached, setEndReached] = useState(false);
   const [cdnErr, setCdnErr] = useState({});       // id -> true
-  // Nguồn lướt y TikTok thật: Dành cho bạn (foryou) / 1 @user / 1 #hashtag
-  const [src, setSrc] = useState('foryou');
   // Phiên nick thật (token từ POST /tiktok/session, giữ trong máy này)
   const [sessionToken, setSessionToken] = useState(() => {
     try { return localStorage.getItem('tt_session') || ''; } catch (e) { return ''; }
@@ -176,6 +176,10 @@ export default function TikTokFeedTab({ showToast }) {
 
   const videoEls = useRef({});                    // id -> <video> element (chụp frame)
   const classifiedRef = useRef(new Set());        // id đã classify vision
+  const loadingMoreRef = useRef(false);           // đang tải thêm (chặn gọi chồng)
+  const hasMoreRef = useRef(true);                // còn video mới để tải thêm
+  const hetMoiRef = useRef(0);                    // đếm lượt tải thêm không ra video mới
+  const videosRef = useRef([]);                   // mirror videos cho logic tải thêm
   const skipTimerRef = useRef(null);
   const navLock = useRef(0);
   const touchY = useRef(null);
@@ -187,6 +191,7 @@ export default function TikTokFeedTab({ showToast }) {
   useEffect(() => { topicsRef.current = topics; }, [topics]);
 
   const current = videos[idx] || null;
+  videosRef.current = videos;
   const kept = skipLog.filter((l) => l.match).length;
   const skipped = skipLog.filter((l) => !l.match).length;
 
@@ -203,7 +208,10 @@ export default function TikTokFeedTab({ showToast }) {
     });
   }, [videos.length]);
 
-  // Auto-skip khi tới video cuối KHÔNG khớp
+  // Cầu trung gian: cho khối trên gọi loadFeed mà không dính thứ tự khai báo
+  const loadFeedRef = useRef(null);
+
+  // Auto-skip khi tới video cuối KHÔNG khớp (còn video mới thì tải thêm thay vì hết)
   const scheduleSkip = useCallback((fromId) => {
     clearTimeout(skipTimerRef.current);
     skipTimerRef.current = setTimeout(() => {
@@ -211,7 +219,8 @@ export default function TikTokFeedTab({ showToast }) {
         const v = videos[i];
         if (v && v.id === fromId) {
           if (i < videos.length - 1) return i + 1;
-          setEndReached(true);
+          if (!hasMoreRef.current) setEndReached(true);
+          else if (loadFeedRef.current) loadFeedRef.current(true);
         }
         return i;
       });
@@ -272,31 +281,77 @@ export default function TikTokFeedTab({ showToast }) {
     scheduleSkip(video.id);
   }, [pushLog, scheduleSkip]);
 
-  // ── Tải feed ──
-  const loadFeed = useCallback(async () => {
+  // ── Tải feed (append=false: tải mới; append=true: tải thêm nối đuôi, lọc trùng) ──
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const loadFeed = useCallback(async (append = false) => {
     if (src === 'user' && !srcUser.trim()) { setError('Nhập @username'); return; }
     if (src === 'tag' && !srcTag.trim()) { setError('Nhập #hashtag'); return; }
-    setLoading(true); setError(''); setEndReached(false);
-    setVideos([]); setIdx(0); setVerdicts({}); setSkipLog([]); setCdnErr({});
-    classifiedRef.current = new Set();
-    clearTimeout(skipTimerRef.current);
+    if (append) {
+      if (loadingMoreRef.current || !hasMoreRef.current) return;
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+    } else {
+      setLoading(true); setError(''); setEndReached(false);
+      setVideos([]); setIdx(0); setVerdicts({}); setSkipLog([]); setCdnErr({});
+      classifiedRef.current = new Set();
+      clearTimeout(skipTimerRef.current);
+    }
     try {
-      const q = new URLSearchParams({ limit: String(limit) });
+      const q = new URLSearchParams({ limit: String(BATCH) });
       if (src === 'user') q.set('user', srcUser.trim());
       else if (src === 'tag') q.set('tag', srcTag.trim().replace(/^#/, ''));
       else q.set('foryou', '1');
       if (sessionToken) q.set('session', sessionToken);
       const data = await apiFetchPublic(`/services/tiktok/feed?${q.toString()}`);
       if (!data.success) throw new Error(data.error || 'Lỗi feed');
-      setVideos(data.videos || []);
-      if (!data.videos || !data.videos.length) setError('Feed rỗng — thử nguồn khác hoặc gắn nick rồi tải lại');
-      setPanelOpen(false);
+      const moi = data.videos || [];
+      if (append) {
+        const co = new Set(videosRef.current.map((v) => v.id));
+        const loc = moi.filter((v) => v.id && !co.has(v.id));
+        if (loc.length) setVideos((cu) => [...cu, ...loc]);
+        // Hết video mới 2 lượt liền thì thôi (tránh tải vòng tròn)
+        hetMoiRef.current = loc.length === 0 ? hetMoiRef.current + 1 : 0;
+        if (hetMoiRef.current >= 2) setHasMore(false);
+      } else {
+        setVideos(moi);
+        setHasMore(true);
+        hetMoiRef.current = 0;
+        if (!moi.length) setError('Feed rỗng — thử nguồn khác hoặc gắn nick rồi tải lại');
+        setPanelOpen(false);
+      }
     } catch (e) {
-      setError(e.message || 'Không tải được feed');
+      if (!append) setError(e.message || 'Không tải được feed');
     } finally {
-      setLoading(false);
+      if (append) { loadingMoreRef.current = false; setLoadingMore(false); }
+      else setLoading(false);
     }
-  }, [src, srcUser, srcTag, limit, sessionToken]);
+  }, [src, srcUser, srcTag, sessionToken]);
+
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  loadFeedRef.current = loadFeed;
+
+  // Mở tab là tự chạy (không bấm gì), đổi nguồn/nick thì tải mới
+  const daTuChay = useRef(false);
+  useEffect(() => {
+    if (active && !daTuChay.current) {
+      daTuChay.current = true;
+      loadFeed(false);
+    }
+  }, [active, loadFeed]);
+  const nguonTruoc = useRef(src + '|' + sessionToken);
+  useEffect(() => {
+    const hien = src + '|' + sessionToken;
+    if (daTuChay.current && hien !== nguonTruoc.current) {
+      nguonTruoc.current = hien;
+      loadFeed(false);
+    }
+  }, [src, sessionToken, loadFeed]);
+
+  // Lướt gần hết → tự tải thêm (vô hạn như TikTok)
+  useEffect(() => {
+    if (videos.length > 0 && idx >= videos.length - 3) loadFeed(true);
+  }, [idx, videos.length, loadFeed]);
 
   // ── Gắn nick TikTok thật (cách thủ công: copy document.cookie) ──
   const connectNick = useCallback(async () => {
@@ -411,15 +466,11 @@ export default function TikTokFeedTab({ showToast }) {
               </p>
             )}
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400">Số video:</span>
-              <select value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))} className="px-2 py-1 rounded-lg bg-[#131417] border border-white/5 text-xs text-white focus:outline-none">
-                {[10, 15, 20, 30].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
               <button
-                onClick={loadFeed} disabled={loading}
+                onClick={() => loadFeed(false)} disabled={loading}
                 className="ml-auto px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
               >
-                {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Tải feed
+                {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Tải lại
               </button>
             </div>
           </div>
@@ -440,7 +491,7 @@ export default function TikTokFeedTab({ showToast }) {
                 {qrLogin.qr ? (
                   <>
                     <img src={qrLogin.qr} alt="Mã QR đăng nhập TikTok" className="mx-auto rounded-xl border border-white/10 max-w-[220px]" />
-                    <p className="text-[11px] text-slate-300">Mở app TikTok trên điện thoại → quét mã này để đăng nhập</p>
+                    <p className="text-[11px] text-slate-300">Mở app TikTok trên điện thoại → quét mã này → bấm <b>Xác nhận đăng nhập</b> trên điện thoại là tự vào</p>
                   </>
                 ) : (
                   <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
@@ -532,8 +583,9 @@ export default function TikTokFeedTab({ showToast }) {
             </button>
           )}
           {current && (
-            <span className="text-[11px] text-slate-400 ml-auto">
-              {idx + 1}/{videos.length} · <Eye size={11} className="inline" /> {fmtCount(current.views)} · {current.author}
+            <span className="text-[11px] text-slate-400 ml-auto flex items-center gap-2">
+              {loadingMore && <span className="flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Đang tải thêm...</span>}
+              <span>{idx + 1}/{videos.length} · <Eye size={11} className="inline" /> {fmtCount(current.views)} · {current.author}</span>
             </span>
           )}
         </div>
@@ -618,7 +670,7 @@ export default function TikTokFeedTab({ showToast }) {
                   <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
                     <p className="text-sm font-semibold text-white">Hết feed 🎉</p>
                     <p className="text-xs text-slate-300">Giữ {kept} · Tự lướt {skipped} video không đúng chủ đề</p>
-                    <button onClick={loadFeed} className="px-4 py-2 rounded-xl bg-pink-500/80 hover:bg-pink-500 text-white text-xs font-medium flex items-center gap-1.5">
+                    <button onClick={() => loadFeed(false)} className="px-4 py-2 rounded-xl bg-pink-500/80 hover:bg-pink-500 text-white text-xs font-medium flex items-center gap-1.5">
                       <RotateCcw size={13} /> Tải lại feed
                     </button>
                   </div>
