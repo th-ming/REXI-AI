@@ -2355,7 +2355,7 @@ router.post('/youtube/summarize', async (req, res) => {
 const tiktokService = require('../services/tiktokService');
 const chatExecutor = require('../services/chatExecutor');
 
-// Feed @user / #hashtag — Playwright scrape (yt-dlp gãy extractor + API thô cần signature).
+// Feed: "Dành cho bạn" (foryou=1, nên kèm session đăng nhập) / @user / #hashtag.
 // Cào lâu (tới ~90s) nên gửi nhịp giữ kết nối mỗi 10s (proxy cắt khi im lặng quá lâu).
 router.get('/tiktok/feed', rateLimit({ windowMs: 60000, max: 20 }), async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -2364,6 +2364,8 @@ router.get('/tiktok/feed', rateLimit({ windowMs: 60000, max: 20 }), async (req, 
     const data = await tiktokService.fetchFeed({
       user: req.query.user,
       tag: req.query.tag,
+      foryou: req.query.foryou,
+      session: req.query.session,
       limit: req.query.limit,
     });
     clearInterval(giuKetNoi);
@@ -2410,23 +2412,18 @@ router.get('/tiktok/stream', rateLimit({ windowMs: 60000, max: 400 }), async (re
 });
 
 // Đường phát chính: giải link qua tikwm rồi pipe về FE (CDN TikTok chặn IP máy này → 403).
-// FE gọi: /tiktok/media?id=<videoId>&user=<tác giả, có/không @ cũng được>
+// Nếu có session đăng nhập + playAddr gốc (u): thử tải trực tiếp bằng cookie nick thật
+// trước (CDN nới tay hơn), rớt mới qua tikwm.
+// FE gọi: /tiktok/media?id=<videoId>&user=<tác giả>&u=<playAddr, có thì tốt>&session=<token>
 router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req, res) => {
   const id = String(req.query.id || '').trim();
   const author = String(req.query.user || req.query.author || '').trim();
   if (!/^\d{10,25}$/.test(id)) {
     return res.status(400).json({ success: false, error: 'Thiếu id video' });
   }
-  try {
-    const entry = await tiktokService.resolvePlayUrl(id, author);
-    const upstream = await fetch(entry.url, {
-      headers: tiktokService.streamHeaders(req.headers.range ? { Range: req.headers.range } : {}),
-      redirect: 'follow',
-      signal: AbortSignal.timeout(45000),
-    });
-    if (!upstream.ok || !upstream.body) {
-      return res.status(502).json({ success: false, error: `Nguồn phát trả ${upstream.status} — thử video khác` });
-    }
+  const playAddr = String(req.query.u || '');
+  const ses = tiktokService.getSession(req.query.session);
+  const pipeVe = async (upstream) => {
     res.status(upstream.status);
     const passthrough = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
     for (const h of passthrough) {
@@ -2436,8 +2433,41 @@ router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req
     res.setHeader('Cache-Control', 'private, max-age=7200');
     const { Readable } = require('stream');
     Readable.fromWeb(upstream.body).pipe(res);
+  };
+  try {
+    // 1. Nick thật → CDN trực tiếp
+    if (ses && /^https:\/\//.test(playAddr)) {
+      try {
+        const truc = await tiktokService.fetchDirect(playAddr, ses.cookieString, req.headers.range);
+        return await pipeVe(truc);
+      } catch (e) {
+        console.warn('[TikTok] media trực tiếp lỗi, qua tikwm:', (e.message || e).toString().slice(0, 100));
+      }
+    }
+    // 2. Bên trung gian tikwm
+    const entry = await tiktokService.resolvePlayUrl(id, author);
+    const upstream = await fetch(entry.url, {
+      headers: tiktokService.streamHeaders(req.headers.range ? { Range: req.headers.range } : {}),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      return res.status(502).json({ success: false, error: `Nguồn phát trả ${upstream.status} — thử video khác` });
+    }
+    return await pipeVe(upstream);
   } catch (e) {
     if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'media lỗi').toString().slice(0, 200) });
+  }
+});
+
+// Tạo phiên đăng nhập TikTok từ cookie user copy (document.cookie trên tiktok.com).
+// FE giữ token trong localStorage, gửi kèm feed/media để lướt nick thật.
+router.post('/tiktok/session', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) => {
+  try {
+    const data = tiktokService.createSession((req.body || {}).cookies);
+    res.json({ success: true, ...data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e.message || 'session lỗi').toString().slice(0, 200) });
   }
 });
 

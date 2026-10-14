@@ -17,6 +17,7 @@ import { getLang } from '../i18n';
 import {
   Music2, Search, Loader2, AlertTriangle, ChevronUp, ChevronDown,
   Filter, RotateCcw, CheckCircle2, XCircle, Sparkles, Settings2, X, Eye,
+  Heart, MessageCircle, UserCheck,
 } from 'lucide-react';
 
 const MODES = [
@@ -45,9 +46,13 @@ function parseTopics(text) {
   return String(text || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean).slice(0, 12);
 }
 // Đường phát chính: backend giải link qua tikwm rồi pipe (CDN TikTok chặn IP → 403).
+// Có session nick + playAddr gốc thì backend thử tải trực tiếp bằng cookie trước.
 // Cùng origin nên canvas chụp frame không bị chặn.
-function mediaUrl(v) {
-  return `/api/services/tiktok/media?id=${encodeURIComponent(v.id)}&user=${encodeURIComponent(String(v.author || '').replace(/^@/, ''))}`;
+function mediaUrl(v, ses) {
+  let s = `/api/services/tiktok/media?id=${encodeURIComponent(v.id)}&user=${encodeURIComponent(String(v.author || '').replace(/^@/, ''))}`;
+  if (v.playAddr) s += `&u=${encodeURIComponent(v.playAddr)}`;
+  if (ses) s += `&session=${encodeURIComponent(ses)}`;
+  return s;
 }
 // Ảnh bìa: thử qua proxy stream cũ (ảnh thường không bị chặn gắt như video).
 function coverUrl(u) {
@@ -66,7 +71,7 @@ function captureFrame(el) {
 }
 
 // ─── 1 video trong feed ──────────────────────────────────────────────────────
-function FeedVideo({ video, active, onRef, onTime, onError }) {
+function FeedVideo({ video, active, session, onRef, onTime, onError }) {
   const [waiting, setWaiting] = useState(true);
   useEffect(() => {
     // Không pause/play trực tiếp ở đây — <video> chỉ mount khi gần đang xem
@@ -76,7 +81,7 @@ function FeedVideo({ video, active, onRef, onTime, onError }) {
       {waiting && <Loader2 size={28} className="absolute text-white/50 animate-spin z-10" />}
       <video
         ref={(el) => { onRef(el); }}
-        src={mediaUrl(video)}
+        src={mediaUrl(video, session)}
         className="max-h-full max-w-full object-contain"
         loop muted playsInline preload={active ? 'auto' : 'metadata'}
         onCanPlay={() => setWaiting(false)}
@@ -106,6 +111,15 @@ export default function TikTokFeedTab({ showToast }) {
   const [skipLog, setSkipLog] = useState([]);     // {id, caption, match, reason, via, at}
   const [endReached, setEndReached] = useState(false);
   const [cdnErr, setCdnErr] = useState({});       // id -> true
+  // Nguồn lướt y TikTok thật: Dành cho bạn (foryou) / 1 @user / 1 #hashtag
+  const [src, setSrc] = useState('foryou');
+  // Phiên nick thật (token từ POST /tiktok/session, giữ trong máy này)
+  const [sessionToken, setSessionToken] = useState(() => {
+    try { return localStorage.getItem('tt_session') || ''; } catch (e) { return ''; }
+  });
+  const [sessionInfo, setSessionInfo] = useState(null); // {logged, cookieCount}
+  const [cookieText, setCookieText] = useState('');
+  const [sessionMsg, setSessionMsg] = useState('');
 
   const videoEls = useRef({});                    // id -> <video> element (chụp frame)
   const classifiedRef = useRef(new Set());        // id đã classify vision
@@ -198,28 +212,56 @@ export default function TikTokFeedTab({ showToast }) {
 
   // ── Tải feed ──
   const loadFeed = useCallback(async () => {
-    if (!srcUser.trim() && !srcTag.trim()) {
-      setError('Nhập @username hoặc #hashtag');
-      return;
-    }
+    if (src === 'user' && !srcUser.trim()) { setError('Nhập @username'); return; }
+    if (src === 'tag' && !srcTag.trim()) { setError('Nhập #hashtag'); return; }
     setLoading(true); setError(''); setEndReached(false);
     setVideos([]); setIdx(0); setVerdicts({}); setSkipLog([]); setCdnErr({});
     classifiedRef.current = new Set();
     clearTimeout(skipTimerRef.current);
     try {
       const q = new URLSearchParams({ limit: String(limit) });
-      if (srcUser.trim()) q.set('user', srcUser.trim()); else q.set('tag', srcTag.trim().replace(/^#/, ''));
+      if (src === 'user') q.set('user', srcUser.trim());
+      else if (src === 'tag') q.set('tag', srcTag.trim().replace(/^#/, ''));
+      else q.set('foryou', '1');
+      if (sessionToken) q.set('session', sessionToken);
       const data = await apiFetchPublic(`/services/tiktok/feed?${q.toString()}`);
       if (!data.success) throw new Error(data.error || 'Lỗi feed');
       setVideos(data.videos || []);
-      if (!data.videos || !data.videos.length) setError('Feed rỗng — thử tài khoản/hashtag khác');
+      if (!data.videos || !data.videos.length) setError('Feed rỗng — thử nguồn khác hoặc gắn nick rồi tải lại');
       setPanelOpen(false);
     } catch (e) {
       setError(e.message || 'Không tải được feed');
     } finally {
       setLoading(false);
     }
-  }, [srcUser, srcTag, limit]);
+  }, [src, srcUser, srcTag, limit, sessionToken]);
+
+  // ── Gắn nick TikTok thật (copy document.cookie trên tiktok.com đã đăng nhập) ──
+  const connectNick = useCallback(async () => {
+    if (!cookieText.trim()) { setSessionMsg('Dán chuỗi cookie trước đã'); return; }
+    setSessionMsg('Đang kết nối...');
+    try {
+      const data = await apiFetchPublic('/services/tiktok/session', {
+        method: 'POST',
+        body: JSON.stringify({ cookies: cookieText.trim() }),
+      });
+      if (!data.success) throw new Error(data.error || 'Kết nối lỗi');
+      setSessionToken(data.token);
+      setSessionInfo({ logged: data.logged, cookieCount: data.cookieCount });
+      setCookieText('');
+      try { localStorage.setItem('tt_session', data.token); } catch (e) {}
+      setSessionMsg(data.logged ? 'Đã gắn nick TikTok ✓ — lướt Dành cho bạn như nick thật' : 'Đã lưu cookie (chưa thấy dấu đăng nhập — kiểm tra lại)');
+    } catch (e) {
+      setSessionMsg('Lỗi: ' + (e.message || 'không kết nối được'));
+    }
+  }, [cookieText]);
+
+  const disconnectNick = useCallback(() => {
+    setSessionToken('');
+    setSessionInfo(null);
+    setSessionMsg('');
+    try { localStorage.removeItem('tt_session'); } catch (e) {}
+  }, []);
 
   // autoplay video đang xem
   useEffect(() => {
@@ -275,17 +317,41 @@ export default function TikTokFeedTab({ showToast }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[11px] font-semibold text-slate-400">Nguồn (@username hoặc #hashtag)</label>
-            <div className="flex gap-2">
-              <input
-                value={srcUser} onChange={(e) => { setSrcUser(e.target.value); setSrcTag(''); }}
-                placeholder="@username" className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40"
-              />
-              <input
-                value={srcTag} onChange={(e) => { setSrcTag(e.target.value); setSrcUser(''); }}
-                placeholder="#hashtag" className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40"
-              />
+            <label className="text-[11px] font-semibold text-slate-400">Nguồn lướt (y như TikTok thật)</label>
+            <div className="flex gap-1.5">
+              {[
+                { id: 'foryou', label: 'Dành cho bạn' },
+                { id: 'user', label: '@user' },
+                { id: 'tag', label: '#tag' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setSrc(t.id)}
+                  className={`flex-1 px-2 py-1.5 rounded-xl text-[11px] font-medium border ${src === t.id ? 'bg-pink-500/20 border-pink-500/40 text-pink-200' : 'bg-[#131417] border-white/5 text-slate-400 hover:text-white'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
+            {src === 'user' && (
+              <input
+                value={srcUser} onChange={(e) => setSrcUser(e.target.value)}
+                placeholder="@username" className="w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40"
+              />
+            )}
+            {src === 'tag' && (
+              <input
+                value={srcTag} onChange={(e) => setSrcTag(e.target.value)}
+                placeholder="#hashtag" className="w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40"
+              />
+            )}
+            {src === 'foryou' && (
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                {sessionToken
+                  ? 'Lướt Dành cho bạn bằng nick đã gắn — đúng video của mày.'
+                  : 'Chưa gắn nick → Dành cho bạn chung. Gắn nick bên dưới để lướt đúng gu của mày.'}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-400">Số video:</span>
               <select value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))} className="px-2 py-1 rounded-lg bg-[#131417] border border-white/5 text-xs text-white focus:outline-none">
@@ -298,6 +364,38 @@ export default function TikTokFeedTab({ showToast }) {
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Tải feed
               </button>
             </div>
+          </div>
+
+          <div className="space-y-2 border-t border-white/5 pt-3">
+            <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+              <UserCheck size={12} className="text-pink-400" /> Nick TikTok của mày
+            </label>
+            {sessionToken ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-emerald-400 flex-1">
+                  ✓ Đã gắn nick{sessionInfo && sessionInfo.cookieCount ? ` (${sessionInfo.cookieCount} cookie)` : ''} — lướt đúng gu của mày
+                </span>
+                <button onClick={disconnectNick} className="text-[11px] text-slate-500 hover:text-rose-400 underline">Gỡ</button>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  value={cookieText} onChange={(e) => setCookieText(e.target.value)} rows={2}
+                  placeholder="Dán chuỗi document.cookie ở đây..."
+                  className="w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40 resize-y"
+                />
+                <button
+                  onClick={connectNick}
+                  className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 text-xs font-medium hover:bg-white/10"
+                >
+                  Kết nối nick
+                </button>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Cách lấy: mở <b className="text-slate-300">tiktok.com</b> (đã đăng nhập) → bấm <b className="text-slate-300">F12</b> → tab Console → gõ <b className="text-slate-300">document.cookie</b> → Enter → copy cả chuỗi dán vào đây. Cookie chỉ giữ trong máy này.
+                </p>
+              </>
+            )}
+            {sessionMsg && !sessionToken && <p className="text-[10px] text-amber-400">{sessionMsg}</p>}
           </div>
 
           <div className="space-y-2 border-t border-white/5 pt-3">
@@ -366,7 +464,7 @@ export default function TikTokFeedTab({ showToast }) {
                 <Music2 size={44} className="text-pink-400/60" />
                 <p className="text-sm font-semibold text-white">Xem TikTok + lọc theo chủ đề của bạn</p>
                 <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
-                  Nhập @username hoặc #hashtag → chọn kiểu lọc → nhập chủ đề muốn xem.
+                  Chọn <b className="text-slate-300">Dành cho bạn</b> (gắn nick để đúng gu), @user hoặc #tag → chọn kiểu lọc → nhập chủ đề muốn xem.
                   Video không đúng chủ đề sẽ <b className="text-slate-300">tự lướt đi</b>. Lăn chuột / phím ↑↓ để tự lướt.
                 </p>
                 {loading && <Loader2 size={22} className="text-pink-400 animate-spin" />}
@@ -386,13 +484,12 @@ export default function TikTokFeedTab({ showToast }) {
                     <div key={v.id} className="h-full w-full">
                       {Math.abs(i - idx) <= 1 && !cdnErr[v.id] ? (
                         <FeedVideo
-                          video={v} active={i === idx}
+                          video={v} active={i === idx} session={sessionToken}
                           onRef={(el) => { videoEls.current[v.id] = el; }}
                           onTime={handleTime}
                           onError={(vid) => setCdnErr((s) => ({ ...s, [vid.id]: true }))}
                         />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-black">
+                      ) : (                        <div className="w-full h-full flex items-center justify-center bg-black">
                           {v.cover && !cdnErr[v.id] ? (
                             <img src={coverUrl(v.cover)} alt="" className="max-h-full max-w-full object-contain opacity-60" loading="lazy" onError={(e) => { e.target.style.display = 'none'; }} />
                           ) : (
@@ -421,6 +518,10 @@ export default function TikTokFeedTab({ showToast }) {
                 <div className="absolute bottom-0 inset-x-0 p-4 pb-6 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none">
                   <p className="text-xs font-bold text-white">{current.author}{current.nickname ? ` · ${current.nickname}` : ''}</p>
                   <p className="text-[11px] text-slate-200 line-clamp-2 mt-0.5">{current.caption || '(không có caption)'}</p>
+                  <p className="text-[11px] text-slate-300 mt-1 flex items-center gap-3">
+                    <span className="flex items-center gap-1"><Heart size={11} className="text-rose-400" /> {fmtCount(current.likes) || '–'}</span>
+                    <span className="flex items-center gap-1"><MessageCircle size={11} className="text-cyan-300" /> {fmtCount(current.comments) || '–'}</span>
+                  </p>
                 </div>
 
                 {/* nút lướt */}

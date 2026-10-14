@@ -36,6 +36,54 @@ function cleanTag(t) {
     .split(/[/?#&]/)[0];
 }
 
+// ─── Phiên đăng nhập (cookie TikTok của user) ──────────────────────────────
+// Lướt "Dành cho bạn" như nick thật + tăng độ tin cậy qua bot wall.
+// Cách lấy: mở tiktok.com (đã đăng nhập) → F12 console → gõ document.cookie → copy.
+// FE: POST /tiktok/session {cookies} → {token}; token đi kèm feed/media.
+const _sessions = new Map(); // token -> { cookieString, exp }
+function parseCookieString(s) {
+  return String(s || '').split(/;\s*/).map((p) => {
+    const i = p.indexOf('=');
+    if (i <= 0) return null;
+    const name = p.slice(0, i).trim();
+    const value = p.slice(i + 1).trim();
+    if (!name || !value) return null;
+    return { name, value, domain: '.tiktok.com', path: '/' };
+  }).filter(Boolean);
+}
+function createSession(cookieString) {
+  const list = parseCookieString(cookieString);
+  if (list.length < 3) throw new Error('Cookie quá ngắn — copy cả chuỗi document.cookie trên tiktok.com');
+  const token = require('crypto').randomBytes(16).toString('hex');
+  _sessions.set(token, { cookieString: String(cookieString), exp: Date.now() + 1000 * 60 * 60 * 24 });
+  if (_sessions.size > 100) _sessions.delete(_sessions.keys().next().value);
+  return { token, cookieCount: list.length, logged: /sessionid|sid_tt|sid_guard/i.test(String(cookieString)) };
+}
+function getSession(token) {
+  const s = _sessions.get(String(token || ''));
+  if (!s || s.exp < Date.now()) return null;
+  return s;
+}
+// Thử tải trực tiếp playAddr bằng cookie đăng nhập (CDN nới tay với nick thật)
+async function fetchDirect(playAddr, cookieString, range) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 40000);
+  try {
+    const r = await fetch(playAddr, {
+      headers: {
+        ...streamHeaders(range ? { Range: range } : {}),
+        Cookie: cookieString,
+      },
+      redirect: 'follow',
+      signal: ctrl.signal,
+    });
+    if (!r.ok || !r.body) throw new Error('CDN trả ' + r.status);
+    return r;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function mapItem(it, fallbackAuthor) {
   const v = it.video || {};
   const a = it.author || {};
@@ -50,35 +98,56 @@ function mapItem(it, fallbackAuthor) {
     nickname: String(a.nickname || ''),
     views: (it.stats && it.stats.playCount) || null,
     likes: (it.stats && it.stats.diggCount) || null,
+    comments: (it.stats && it.stats.commentCount) || null,
+    shares: (it.stats && it.stats.shareCount) || null,
   };
 }
 
-// Fallback: JSON SSR nhúng trong trang (khi lỡ không bắt được response mạng)
+// Fallback: JSON SSR nhúng trong trang (khi lỡ không bắt được response mạng).
+// Quét MỌI bucket (user-detail, video-detail, for-you...) tìm mảng itemList.
 function extractFromUniversalData(raw) {
   try {
     const obj = JSON.parse(raw);
     const scope = (obj.__DEFAULT_SCOPE__) || {};
-    const buckets = ['webapp.user-detail', 'webapp.video-detail'];
-    for (const b of buckets) {
-      const bucket = scope[b];
-      if (!bucket) continue;
-      const itemList = (bucket.itemList || (bucket.userInfo && bucket.userInfo.itemList)) || [];
-      if (itemList.length) return itemList;
-    }
+    const tim = (node, sau = 0) => {
+      if (!node || typeof node !== 'object' || sau > 4) return null;
+      if (Array.isArray(node.itemList) && node.itemList.length
+        && node.itemList[0] && (node.itemList[0].video || node.itemList[0].id)) return node.itemList;
+      if (Array.isArray(node)) {
+        for (const phan of node.slice(0, 40)) {
+          const kq = tim(phan, sau + 1);
+          if (kq) return kq;
+        }
+        return null;
+      }
+      for (const khoa of Object.keys(node).slice(0, 60)) {
+        if (khoa === '__proto__') continue;
+        try {
+          const kq = tim(node[khoa], sau + 1);
+          if (kq) return kq;
+        } catch (e) { /* bỏ qua nhánh lỗi */ }
+      }
+      return null;
+    };
+    return tim(scope);
   } catch (e) { /* JSON giữa chừng hoặc không có — bỏ qua */ }
   return null;
 }
 
 /**
- * Lấy feed video của 1 @user hoặc #hashtag.
+ * Lấy feed video: "Dành cho bạn" (foryou, cần cookie đăng nhập để cá nhân hoá),
+ * 1 @user, hoặc 1 #hashtag.
  * @returns {Promise<{source, count, videos: Array}>}
  */
-async function fetchFeed({ user, tag, limit = 20 } = {}) {
+async function fetchFeed({ user, tag, foryou, session, limit = 20 } = {}) {
   const u = cleanUser(user);
   const h = cleanTag(tag);
-  if (!u && !h) throw new Error('Nhập @username hoặc #hashtag');
-  const pageUrl = u ? `https://www.tiktok.com/@${u}` : `https://www.tiktok.com/tag/${h}`;
+  const fy = foryou === true || foryou === '1' || foryou === 1;
+  if (!u && !h && !fy) throw new Error('Chọn nguồn: Dành cho bạn, @username hoặc #hashtag');
+  const pageUrl = fy ? 'https://www.tiktok.com/foryou' : (u ? `https://www.tiktok.com/@${u}` : `https://www.tiktok.com/tag/${h}`);
   const maxItems = Math.min(30, Math.max(1, parseInt(limit, 10) || 20));
+  const ses = getSession(session);
+  const cookieList = ses ? parseCookieString(ses.cookieString) : [];
 
   // TikTok chập chờn (bot wall theo IP/lượt) → 1 lượt duy nhất (~60s, proxy cắt
   // kết nối chờ lâu). Thất bại thì FE bấm "Tải lại" là 1 lượt mới (sạch browser).
@@ -87,7 +156,7 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
   for (let attempt = 1; attempt <= 1; attempt++) {
     try {
       return await Promise.race([
-        serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h)),
+        serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h, cookieList, fy)),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Hết 90s chờ TikTok — thử bấm Tải lại')), 90000)),
       ]);
     } catch (e) {
@@ -99,7 +168,7 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
   throw lastErr;
 }
 
-async function scrapeOnce(pageUrl, maxItems, u, h) {
+async function scrapeOnce(pageUrl, maxItems, u, h, cookieList, fy) {
     const { chromium } = require('playwright');
     const browser = await chromium.launch({
       headless: true,
@@ -111,6 +180,9 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
         viewport: { width: 1366, height: 900 },
         locale: 'en-US',
       });
+      if (cookieList && cookieList.length) {
+        await ctx.addCookies(cookieList).catch(() => {});
+      }
       // Chặn tài nguyên nặng cho nhanh, giữ script/XHR để qua challenge
       await ctx.route('**/*', (route) => {
         const type = route.request().resourceType();
@@ -119,14 +191,17 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
       });
       const page = await ctx.newPage();
 
-      // Gom TẤT CẢ response item_list (lượt đầu hay trả body rỗng).
-      // IP datacenter hay bị trả rỗng lúc đầu — chờ tới 60s, hết thì reload
-      // (lúc này đã có cookie challenge) rồi chờ tiếp 45s.
+      // Gom DỒN từ mọi response item_list (lượt đầu hay trả body rỗng; foryou mỗi
+      // lượt chỉ trả vài video nên phải gom nhiều lượt + cuộn liên tục).
+      // IP datacenter hay bị trả rỗng lúc đầu — hết lượt 1 thì reload (đã có
+      // cookie challenge) rồi gom tiếp. Đủ maxItems là về sớm.
       const apiHits = [];
       page.on('response', (r) => {
-        if (r.url().includes('/api/post/item_list') || r.url().includes('/api/challenge/item_list')) apiHits.push(r);
+        // MỌI item_list: post (user), challenge (tag), recommend (foryou), prefetch/preload...
+        if (r.url().includes('item_list')) apiHits.push(r);
       });
-      const layItemDauTien = async () => {
+      const gom = new Map(); // id video -> item (giữ thứ tự xuất hiện)
+      const hutResponseMoi = async () => {
         for (const resp of apiHits) {
           if (resp._daDoc) continue;
           resp._daDoc = true;
@@ -135,32 +210,37 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
             resp.json().catch(() => null),
             new Promise((r) => setTimeout(() => r(null), 8000)),
           ]);
-          if (data && Array.isArray(data.itemList) && data.itemList.length) return data.itemList;
+          const list = data && Array.isArray(data.itemList) ? data.itemList : null;
+          if (list) {
+            for (const it of list) {
+              if (it && it.id && !gom.has(String(it.id))) gom.set(String(it.id), it);
+              if (gom.size >= maxItems * 2) break;
+            }
+          }
         }
-        return null;
       };
 
       await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
-      let items = await layItemDauTien();
       const han = Date.now() + 30000;
       let lanCuon = 0;
-      while (!items && Date.now() < han) {
-        await page.waitForTimeout(3000);
-        items = await layItemDauTien();
-        if (!items && Date.now() - lanCuon > 8000) {
+      while (gom.size < maxItems && Date.now() < han) {
+        await page.waitForTimeout(2500);
+        await hutResponseMoi();
+        if (gom.size < maxItems && Date.now() - lanCuon > 4000) {
           lanCuon = Date.now();
-          await page.evaluate(() => window.scrollBy(0, 1200)).catch(() => {});
+          await page.evaluate(() => window.scrollBy(0, 1500)).catch(() => {});
         }
       }
-      if (!items) {
+      if (gom.size < 3) {
         await page.reload({ waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
         const han2 = Date.now() + 25000;
-        while (!items && Date.now() < han2) {
-          await page.waitForTimeout(3000);
-          items = await layItemDauTien();
-          if (!items) await page.evaluate(() => window.scrollBy(0, 1200)).catch(() => {});
+        while (gom.size < maxItems && Date.now() < han2) {
+          await page.waitForTimeout(2500);
+          await hutResponseMoi();
+          await page.evaluate(() => window.scrollBy(0, 1500)).catch(() => {});
         }
       }
+      let items = gom.size ? Array.from(gom.values()) : null;
       let author = u || '';
       if (items && items.length) {
         const au = items[0] && items[0].author;
@@ -187,7 +267,7 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
         throw new Error('Feed có data nhưng không tách được link phát — thử lại');
       }
 
-      return { source: u ? `@${u}` : `#${h}`, count: videos.length, videos };
+      return { source: fy ? 'Dành cho bạn' : (u ? `@${u}` : `#${h}`), count: videos.length, videos, foryou: !!fy };
     } finally {
       await browser.close().catch(() => {});
     }
@@ -210,7 +290,7 @@ function streamHeaders(extra = {}) {
   };
 }
 
-module.exports = { fetchFeed, streamHeaders, cleanUser, cleanTag, resolvePlayUrl };
+module.exports = { fetchFeed, streamHeaders, cleanUser, cleanTag, resolvePlayUrl, createSession, getSession, fetchDirect };
 
 // ─── Giải link phát qua tikwm (CDN TikTok chặn IP máy này → 403) ────────────
 // Cache theo id video 2 giờ (link tikwm sống vài giờ, đỡ gọi lại mỗi lần xem).
