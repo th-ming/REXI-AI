@@ -80,10 +80,10 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
   const pageUrl = u ? `https://www.tiktok.com/@${u}` : `https://www.tiktok.com/tag/${h}`;
   const maxItems = Math.min(30, Math.max(1, parseInt(limit, 10) || 20));
 
-  // TikTok chập chờn (bot wall theo IP/lượt) → thử tối đa 2 lần, mỗi lần browser mới.
-  // Mỗi lượt tối đa ~60s (proxy cắt kết nối chờ lâu) — FE bấm "Tải lại" để thử tiếp.
+  // TikTok chập chờn (bot wall theo IP/lượt) → 1 lượt duy nhất (~60s, proxy cắt
+  // kết nối chờ lâu). Thất bại thì FE bấm "Tải lại" là 1 lượt mới (sạch browser).
   let lastErr = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 1; attempt++) {
     try {
       return await serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h));
     } catch (e) {
