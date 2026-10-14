@@ -73,14 +73,23 @@ async function chayLogin(loginId) {
   const han = Date.now() + QR_TIMEOUT;
   try {
     const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
+    // Chặn media/font cho nhẹ (giữ ảnh/script vì mã QR có thể là thẻ img + cần script render)
+    await ctx.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (type === 'media' || type === 'font') return route.abort();
+      return route.continue();
+    }).catch(() => {});
     const page = await ctx.newPage();
     await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
-    await page.waitForTimeout(6000);
-    // Trang login bắt chọn cách đăng nhập trước → bấm vào mục "mã QR"
-    await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(5000);
+    // Chờ trang login hiện (theo tín hiệu, không chờ cứng) rồi bấm mục "mã QR"
+    await page.getByText(/mã QR|QR Code/i).first().waitFor({ timeout: 25000 }).catch(() => {});
+    await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 8000 }).catch(() => {});
+    // Chờ khung mã QR hiện rồi chụp ngay
+    const khungQr = page.locator('canvas, img[src*="qr" i], div[class*="qr" i] canvas').first();
+    await khungQr.waitFor({ timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(1200); // cho mã render nét
     // Chụp mã QR (ưu tiên đúng khung QR, rớt thì cả trang)
-    let anh = await page.locator('canvas, img[src*="qr"], div[class*="qr"] canvas').first().screenshot().catch(() => null);
+    let anh = await khungQr.screenshot().catch(() => null);
     if (!anh) anh = await page.screenshot().catch(() => null);
     if (!anh) throw new Error('Không chụp được mã QR');
     rec.qr = 'data:image/png;base64,' + anh.toString('base64');

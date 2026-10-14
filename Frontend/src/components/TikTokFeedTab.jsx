@@ -166,7 +166,7 @@ export default function TikTokFeedTab({ showToast }) {
             setQrLogin((q) => (q ? { ...q, qr: st.qr || q.qr, status: st.status } : q));
           }
         } catch (e) { /* poll lỗi thì thôi, lượt sau */ }
-      }, 3000);
+      }, 2000);
     } catch (e) {
       setSessionMsg('Lỗi: ' + (e.message || 'không mở được QR'));
     }
