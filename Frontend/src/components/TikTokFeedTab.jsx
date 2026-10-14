@@ -340,15 +340,17 @@ export default function TikTokFeedTab({ showToast, active }) {
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
   loadFeedRef.current = loadFeed;
 
-  // Mở tab là tự chạy feed + tự mở mã QR sẵn (chưa gắn nick) để quét ngay
+  // Mở tab là tự chạy feed; feed xong (được hay lỗi) mới tự mở mã QR
+  // (tránh 2 việc nặng cùng lúc trên máy cloud yếu)
   const daTuChay = useRef(false);
   useEffect(() => {
     if (active && !daTuChay.current) {
       daTuChay.current = true;
-      loadFeed(false);
-      try {
-        if (!localStorage.getItem('tt_session')) startQrRef.current && startQrRef.current();
-      } catch (e) {}
+      loadFeed(false).catch(() => {}).finally(() => {
+        try {
+          if (!localStorage.getItem('tt_session') && startQrRef.current) startQrRef.current();
+        } catch (e) {}
+      });
     }
   }, [active, loadFeed]);
   const startQrRef = useRef(null);

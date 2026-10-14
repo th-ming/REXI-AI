@@ -108,7 +108,7 @@ async function damBaoBangPhien() {
 // FE: POST /tiktok/qr/start → {loginId}; hiện QR; poll GET /tiktok/qr/status
 // → done: {token} (phiên như createSession). Hết 150s không quét thì expired.
 const _logins = new Map(); // loginId -> { status, qr, token, logged, cookieCount, error }
-const QR_TIMEOUT = 150000;
+const QR_TIMEOUT = 300000; // 5 phút (đủ chờ feed nhả browser + quét + xác nhận)
 
 // Trình duyệt QR chạy nền sẵn (hâm nóng): bấm là chụp mã ngay, khỏi chờ mở mới.
 // Giữ đúng 1 browser + 1 trang login; chết thì lần sau mở lại (đường chậm cũ).
@@ -193,8 +193,9 @@ async function chayLogin(loginId) {
         nong.sinhLuc = Date.now();
       }
     } catch (eNong) {
-      // Đường chậm cũ: mở browser riêng — nhưng CHỜ máy rảnh trước (không 2 browser cùng lúc)
-      await choRanh(45000);
+      // Đường chậm cũ: mở browser riêng — chờ feed nhả browser (tối đa 120s,
+      // feed ~90s) thay vì báo bận. FE hiện "đang mở" trong lúc chờ.
+      await choRanh(120000);
       if (ramCao()) throw new Error('Máy chủ đang bận (RAM cao) — thử mở mã lại sau ít phút');
       const { chromium } = require('playwright');
       browser = await chromium.launch({
