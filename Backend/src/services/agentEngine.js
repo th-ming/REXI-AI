@@ -67,7 +67,7 @@ const DSH_OAI_PROVIDERS = {
   openai: 'https://api.openai.com/v1',
   deepseek: 'https://api.deepseek.com/v1',
   bai: 'https://api.b.ai/v1',
-  kiosapi: 'https://router.kiosapi.com/v1',
+  kiosapi: 'https://kiosapi.com/v1',
   grok: 'https://api.x.ai/v1',
   xagentrouter: 'https://agentrouter.org/v1',
   mintrouter: 'https://mintrouter.ai/v1',

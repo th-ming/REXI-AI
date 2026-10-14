@@ -54,7 +54,7 @@ const PROVIDER_ENDPOINTS = {
   xagentrouter: { name: 'AgentRouter',        endpoint: 'https://agentrouter.org/v1/models',                    auth: 'bearer' },
   // 3 router mới (key lấy từ opencode config của user, 9/2026 — opencode dùng hằng ngày):
   bai:         { name: 'B.AI',               endpoint: 'https://api.b.ai/v1/models',                           auth: 'bearer' },
-  kiosapi:     { name: 'KiosAPI Free',       endpoint: 'https://router.kiosapi.com/v1/models',                 auth: 'bearer' },
+  kiosapi:     { name: 'KiosAPI Free',       endpoint: 'https://kiosapi.com/v1/models',                 auth: 'bearer' },
   // trustCatalog: free tier 1 req/phút TOÀN ACCOUNT (verify 9/2026) → health-test hàng loạt
   // chỉ gây bão 429, vô nghĩa. Đăng ký thẳng theo listing (:free = active), quotaManager
   // giới hạn 1/phút lúc chat thật.
@@ -196,7 +196,7 @@ async function quickHealthCheck(providerId, apiKey, modelId) {
       // xkiro/agentrouter OpenAI-compatible → dùng block generic bên dưới
       xagentrouter: 'https://agentrouter.org/v1/chat/completions',
       bai: 'https://api.b.ai/v1/chat/completions',
-      kiosapi: 'https://router.kiosapi.com/v1/chat/completions',
+      kiosapi: 'https://kiosapi.com/v1/chat/completions',
       unorouter: 'https://api.unorouter.com/v1/chat/completions',
       kilo: 'https://kilo.ai/api/openrouter/chat/completions',
     };

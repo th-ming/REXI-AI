@@ -28,7 +28,7 @@ const TEST_PLAN = {
   mintrouter:  { url: 'https://mintrouter.ai/v1/chat/completions',           model: 'muse-spark-1.3-contributor-free', auth: 'bearer' },
   agentrouter: { url: 'https://agentrouter.org/v1/chat/completions',        model: 'gpt-5.6-sol',                 auth: 'bearer' },
   bai:         { url: 'https://api.b.ai/v1/chat/completions',               model: 'qwen3.8-flash',               auth: 'bearer' },
-  kiosapi:     { url: 'https://router.kiosapi.com/v1/chat/completions',     model: 'sensenova-6.8-flash-lite',    auth: 'bearer' },
+  kiosapi:     { url: 'https://kiosapi.com/v1/chat/completions',     model: 'sensenova-6.8-flash-lite',    auth: 'bearer' },
   gemini:      { url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent', model: null, auth: 'query' },
   // kilo: KEYLESS — không cần key; nếu test không có key thì gửi không Authorization
   kilo:        { url: 'https://kilo.ai/api/openrouter/chat/completions', model: 'nvidia/nemotron-3.5-lightning:free', auth: 'bearer' },

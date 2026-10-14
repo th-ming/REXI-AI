@@ -1127,7 +1127,7 @@ ${memoryText || '- Người dùng thích làm việc chuyên nghiệp, nội dun
               const cleanedBase = (baseUrl || "https://kilo.ai/api/openrouter").replace(/\/+$/, '');
               endpoint = cleanedBase.endsWith('/chat/completions') ? cleanedBase : `${cleanedBase}/chat/completions`;
             } else if (['bai', 'kiosapi', 'unorouter'].includes(selectedProvider)) {
-              const NEW_BASES = { bai: 'https://api.b.ai/v1', kiosapi: 'https://router.kiosapi.com/v1', unorouter: 'https://api.unorouter.com/v1' };
+              const NEW_BASES = { bai: 'https://api.b.ai/v1', kiosapi: 'https://kiosapi.com/v1', unorouter: 'https://api.unorouter.com/v1' };
               const cleanedBase = (baseUrl || NEW_BASES[selectedProvider]).replace(/\/+$/, '');
               endpoint = cleanedBase.endsWith('/chat/completions') ? cleanedBase : `${cleanedBase}/chat/completions`;
             } else if (selectedProvider === 'agentrouter') {

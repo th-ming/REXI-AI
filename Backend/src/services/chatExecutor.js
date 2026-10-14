@@ -42,7 +42,7 @@ function defaultBase(provider) {
     mintrouter: 'https://mintrouter.ai/v1',
     agentrouter: 'https://agentrouter.org/v1',
     bai: 'https://api.b.ai/v1',
-    kiosapi: 'https://router.kiosapi.com/v1',
+    kiosapi: 'https://kiosapi.com/v1',
     unorouter: 'https://api.unorouter.com/v1',
     kilo: 'https://kilo.ai/api/openrouter',
     gemini: 'https://generativelanguage.googleapis.com/v1beta',

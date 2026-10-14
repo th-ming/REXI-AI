@@ -436,7 +436,7 @@ async function fetchModelsFromProvider(provider, apiKey, baseUrl) {
       'cohere': 'https://api.cohere.com/compatibility/v1',
       'mistral': 'https://api.mistral.ai/v1',
       'bai': 'https://api.b.ai/v1',
-      'kiosapi': 'https://router.kiosapi.com/v1',
+      'kiosapi': 'https://kiosapi.com/v1',
       'unorouter': 'https://api.unorouter.com/v1'
     };
     const cleanedBase = (baseUrl || OPENAI_COMPAT_BASES[provider]).replace(/\/+$/, '');
@@ -573,7 +573,7 @@ async function aiAnalyzeProviderWithGroq(providerInput) {
     'agentrouter': { providerId: 'agentrouter', providerName: 'AgentRouter (GPT-5.6 Sol)', modelsEndpoint: 'https://agentrouter.org/v1/models' },
     'bai': { providerId: 'bai', providerName: 'B.AI', modelsEndpoint: 'https://api.b.ai/v1/models' },
     'b.ai': { providerId: 'bai', providerName: 'B.AI', modelsEndpoint: 'https://api.b.ai/v1/models' },
-    'kiosapi': { providerId: 'kiosapi', providerName: 'KiosAPI', modelsEndpoint: 'https://router.kiosapi.com/v1/models' },
+    'kiosapi': { providerId: 'kiosapi', providerName: 'KiosAPI', modelsEndpoint: 'https://kiosapi.com/v1/models' },
     'unorouter': { providerId: 'unorouter', providerName: 'UnoRouter', modelsEndpoint: 'https://api.unorouter.com/v1/models' }
   };
 
@@ -669,7 +669,7 @@ async function verifyModelHealth(provider, apiKey, baseUrl, modelId) {
         endpoint = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
       }
       if (['bai', 'kiosapi', 'unorouter'].includes(provider)) {
-        const NEW_BASES = { bai: 'https://api.b.ai/v1', kiosapi: 'https://router.kiosapi.com/v1', unorouter: 'https://api.unorouter.com/v1' };
+        const NEW_BASES = { bai: 'https://api.b.ai/v1', kiosapi: 'https://kiosapi.com/v1', unorouter: 'https://api.unorouter.com/v1' };
         const base = cleanBase || NEW_BASES[provider];
         endpoint = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
       }
