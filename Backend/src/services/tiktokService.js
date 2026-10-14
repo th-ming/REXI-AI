@@ -80,7 +80,21 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
   const pageUrl = u ? `https://www.tiktok.com/@${u}` : `https://www.tiktok.com/tag/${h}`;
   const maxItems = Math.min(30, Math.max(1, parseInt(limit, 10) || 20));
 
-  return serialize(async () => {
+  // TikTok chập chờn (bot wall theo IP/lượt) → thử tối đa 3 lần, mỗi lần browser mới
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await serialize(() => scrapeOnce(pageUrl, maxItems, u || '', h));
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[TikTok] feed lần ${attempt} lỗi: ${(e.message || e).toString().slice(0, 120)}`);
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+  }
+  throw lastErr;
+}
+
+async function scrapeOnce(pageUrl, maxItems, u, h) {
     const { chromium } = require('playwright');
     const browser = await chromium.launch({
       headless: true,
@@ -100,22 +114,29 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
       });
       const page = await ctx.newPage();
 
-      const apiResp = page.waitForResponse(
-        (r) => r.url().includes('/api/post/item_list') || r.url().includes('/api/challenge/item_list'),
-        { timeout: 20000 }
-      ).catch(() => null);
+      // Gom TẤT CẢ response item_list (lượt đầu hay trả body rỗng) + cuộn trang kích thêm request
+      const apiHits = [];
+      page.on('response', (r) => {
+        if (r.url().includes('/api/post/item_list') || r.url().includes('/api/challenge/item_list')) apiHits.push(r);
+      });
 
-      await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT });
-      const resp = await apiResp;
+      await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
+      for (let i = 0; i < 8 && !apiHits.length; i++) await page.waitForTimeout(1500);
+      // Cuộn vài lần cho trang lazy-load thêm video
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => window.scrollBy(0, 1200)).catch(() => {});
+        await page.waitForTimeout(1500);
+      }
 
       let items = null;
       let author = u || '';
-      if (resp) {
+      for (const resp of apiHits) {
         const data = await resp.json().catch(() => null);
         if (data && Array.isArray(data.itemList) && data.itemList.length) {
           items = data.itemList;
           const au = data.itemList[0] && data.itemList[0].author;
           if (au && au.uniqueId) author = au.uniqueId;
+          break;
         }
       }
       if (!items) {
@@ -128,18 +149,21 @@ async function fetchFeed({ user, tag, limit = 20 } = {}) {
       }
 
       if (!items || !items.length) {
-        throw new Error('Không lấy được feed TikTok (bot wall hoặc tài khoản rỗng) — thử lại sau ít phút');
+        const title = await page.title().catch(() => '');
+        throw new Error(`Không lấy được feed TikTok (bot wall hoặc tài khoản rỗng) — thử lại sau ít phút [title=${title.slice(0, 40)}, apiHits=${apiHits.length}]`);
       }
 
       const videos = items.slice(0, maxItems)
         .map((it) => mapItem(it, author))
         .filter((v) => v.id && v.playAddr);
+      if (!videos.length) {
+        throw new Error('Feed có data nhưng không tách được link phát — thử lại');
+      }
 
       return { source: u ? `@${u}` : `#${h}`, count: videos.length, videos };
     } finally {
       await browser.close().catch(() => {});
     }
-  });
 }
 
 // GHI CHÚ: playAddr từ feed phát qua /tiktok/stream, nhưng CDN TikTok trả 403
