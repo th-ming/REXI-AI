@@ -50,7 +50,8 @@ import {
   Play,
   GraduationCap,
   Scissors,
-  Wand2
+  Wand2,
+  Music2
 } from 'lucide-react';
 import { getLang, setLang, t } from './i18n';
 import { tx } from './i18n-sweep';
@@ -70,6 +71,7 @@ import VideoCreatorTab from './components/VideoCreatorTab';
 import OpenCutTab from './components/OpenCutTab';
 import VideoEditTab from './components/VideoEditTab';
 import OpenShortsTab from './components/OpenShortsTab';
+import TikTokFeedTab from './components/TikTokFeedTab';
 import ImageGenTab from './components/ImageGenTab';
 import DocumentsTab from './components/DocumentsTab';
 import YouTubeTab from './components/YouTubeTab';
@@ -2050,6 +2052,15 @@ useEffect(() => {
             />
           </div>
 
+          {/* TAB 5d-2: TIKTOK FEED (xem dọc + lọc chủ đề AI tự lướt) */}
+          <div className={activeTab === 'tiktokfeed' ? 'contents' : 'hidden'}>
+            <TikTokFeedTab
+              authToken={authToken}
+              showToast={showToast}
+              active={activeTab === 'tiktokfeed'}
+            />
+          </div>
+
           {/* TAB 5e: GAME ZONE (HTML5 games) */}
           {activeTab === 'games' && (
             <GameTab showToast={showToast} />
@@ -2457,6 +2468,7 @@ useEffect(() => {
                 { tab: 'opencut', icon: <Clapperboard size={17} />, label: t(lang, 'fabOpenCut'), color: 'text-sky-400', desc: t(lang, 'fabOpenCutDesc') },
                 { tab: 'openshorts', icon: <Scissors size={17} />, label: t(lang, 'fabOpenShorts'), color: 'text-orange-400', desc: t(lang, 'fabOpenShortsDesc') },
                 { tab: 'youtube', icon: <MonitorPlay size={17} />, label: t(lang, 'youtube'), color: 'text-red-400', desc: t(lang, 'fabYoutubeDesc') },
+                { tab: 'tiktokfeed', icon: <Music2 size={17} />, label: 'TikTok Feed', color: 'text-pink-400', desc: 'Xem TikTok lọc theo chủ đề — AI tự lướt' },
                 { tab: 'games', icon: <Gamepad2 size={17} />, label: t(lang, 'fabGames'), color: 'text-fuchsia-400', desc: t(lang, 'fabGamesDesc') },
                 { tab: 'classroom', icon: <GraduationCap size={17} />, label: t(lang, 'fabClassroom'), color: 'text-teal-400', desc: t(lang, 'fabClassroomDesc') },
               ].map(item => (

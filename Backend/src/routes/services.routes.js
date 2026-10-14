@@ -2351,6 +2351,126 @@ router.post('/youtube/summarize', async (req, res) => {
   }
 });
 
+// ─── TIKTOK FEED (xem dọc + lọc chủ đề, AI nhìn hình tự lướt) ───────────────
+const tiktokService = require('../services/tiktokService');
+const chatExecutor = require('../services/chatExecutor');
+
+// Feed @user / #hashtag — Playwright scrape (yt-dlp gãy extractor + API thô cần signature)
+router.get('/tiktok/feed', rateLimit({ windowMs: 60000, max: 20 }), async (req, res) => {
+  try {
+    const data = await tiktokService.fetchFeed({
+      user: req.query.user,
+      tag: req.query.tag,
+      limit: req.query.limit,
+    });
+    res.json({ success: true, ...data });
+  } catch (e) {
+    console.error('[TikTok] feed error:', (e.message || e).toString().slice(0, 200));
+    res.status(502).json({ success: false, error: (e.message || 'TikTok feed lỗi').toString().slice(0, 300) });
+  }
+});
+
+// Proxy stream playAddr (CDN TikTok chặn hotlink thiếu Referer; FE cũng cần cùng origin cho canvas)
+router.get('/tiktok/stream', rateLimit({ windowMs: 60000, max: 400 }), async (req, res) => {
+  const target = String(req.query.u || '');
+  if (!/^https:\/\//.test(target) || !/tiktok(?:cdn|v16|v19|\.com)/i.test(target)) {
+    return res.status(400).json({ success: false, error: 'URL không hợp lệ' });
+  }
+  try {
+    const upstream = await fetch(target, {
+      headers: tiktokService.streamHeaders(req.headers.range ? { Range: req.headers.range } : {}),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      return res.status(502).json({ success: false, error: `CDN TikTok trả ${upstream.status} — bấm tải lại feed (playAddr hết hạn)` });
+    }
+    res.status(upstream.status);
+    const passthrough = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+    for (const h of passthrough) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    const { Readable } = require('stream');
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'stream lỗi').toString().slice(0, 200) });
+  }
+});
+
+// Đường phát chính: giải link qua tikwm rồi pipe về FE (CDN TikTok chặn IP máy này → 403).
+// FE gọi: /tiktok/media?id=<videoId>&user=<tác giả, có/không @ cũng được>
+router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req, res) => {
+  const id = String(req.query.id || '').trim();
+  const author = String(req.query.user || req.query.author || '').trim();
+  if (!/^\d{10,25}$/.test(id)) {
+    return res.status(400).json({ success: false, error: 'Thiếu id video' });
+  }
+  try {
+    const entry = await tiktokService.resolvePlayUrl(id, author);
+    const upstream = await fetch(entry.url, {
+      headers: tiktokService.streamHeaders(req.headers.range ? { Range: req.headers.range } : {}),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      return res.status(502).json({ success: false, error: `Nguồn phát trả ${upstream.status} — thử video khác` });
+    }
+    res.status(upstream.status);
+    const passthrough = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+    for (const h of passthrough) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=7200');
+    const { Readable } = require('stream');
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'media lỗi').toString().slice(0, 200) });
+  }
+});
+
+// AI nhìn frame → video có khớp chủ đề user muốn không? (vision route của modelRouter)
+router.post('/tiktok/classify', rateLimit({ windowMs: 60000, max: 60 }), async (req, res) => {
+  const { image, topics, caption } = req.body || {};
+  if (!image || !/^data:image\/(png|jpe?g|webp);base64,/.test(String(image))) {
+    return res.status(400).json({ success: false, error: 'Thiếu frame (data:image/*;base64)' });
+  }
+  const topicList = (Array.isArray(topics) ? topics : String(topics || '').split(/[,;\n]/))
+    .map((s) => String(s).trim()).filter(Boolean).slice(0, 12);
+  if (!topicList.length) {
+    return res.json({ success: true, match: true, reason: 'Chưa đặt chủ đề' });
+  }
+  const candidates = [
+    { provider: 'gemini', model: 'models/gemini-3-flash-preview' },
+    { provider: 'xkiro', model: 'mistralai/mistral-small-2603' },
+    { provider: 'nvidia', model: 'google/gemma-4-31b-it' },
+  ];
+  const systemPrompt = 'Bạn là bộ lọc nội dung video ngắn. Chỉ trả đúng 1 dòng JSON, KHÔNG thêm chữ nào khác: {"match": true|false, "reason": "tối đa 12 từ"}';
+  const userMsg = `![frame](${image})\nNgười xem CHỈ muốn xem các chủ đề: ${topicList.join(', ')}.\nCaption video: ${String(caption || '(không có)').slice(0, 300)}.\nNhìn khung hình này và quyết định video có thuộc chủ đề người xem muốn không (nội dung, đối tượng, bối cảnh). Trả JSON.`;
+  try {
+    const result = await chatExecutor.callWithFallback(candidates, {
+      systemPrompt,
+      history: [{ vai_tro: 'user', noi_dung: userMsg }],
+      thinkingLevel: 'fast',
+    });
+    if (!result.ok) {
+      return res.status(502).json({ success: false, error: (result.errors || []).join(' | ').slice(0, 300) });
+    }
+    const m = /"match"\s*:\s*(true|false)/i.exec(result.content);
+    const r = /"reason"\s*:\s*"([^"]*)"/i.exec(result.content);
+    return res.json({
+      success: true,
+      match: m ? m[1].toLowerCase() === 'true' : true, // AI parse lỗi → fail-open (giữ video)
+      reason: r ? r[1] : String(result.content).slice(0, 60),
+      provider: result.provider,
+    });
+  } catch (e) {
+    return res.status(502).json({ success: false, error: (e.message || 'classify lỗi').toString().slice(0, 200) });
+  }
+});
+
 router.post('/office/generate-docx', authMiddleware, async (req, res) => {
   const { title, content } = req.body;
   if (!content) return res.status(400).json({ error: 'Thiếu nội dung văn bản' });

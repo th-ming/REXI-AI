@@ -1,0 +1,448 @@
+/**
+ * TikTokFeedTab.jsx — Xem TikTok dạng khung dọc (feed) + LỌC CHỦ ĐỀ TỰ ĐỘNG.
+ *
+ * Đặt chủ đề muốn xem (vd: "váy", "mèo cute", "gym") → app tự xem từng video:
+ *   - Lớp 1: lọc caption/hashtag theo chủ đề (khớp từ → giữ)
+ *   - Lớp 2: AI nhìn khung hình (vision) — chụp frame giây ~0.6s gửi backend
+ *     classify (Gemini/mistral/gemma vision) → không khớp → TỰ LƯỚT sang video kế.
+ * Kết quả mỗi video hiện badge xanh (giữ) / đỏ (bỏ qua + lý do), log đầy đủ bên panel.
+ *
+ * Backend: GET /services/tiktok/feed (Playwright scrape) · GET /services/tiktok/stream
+ * (proxy CDN kèm Referer/Range — same-origin nên canvas chụp frame không bị taint)
+ * · POST /services/tiktok/classify (vision LLM).
+ */
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { apiFetchPublic } from '../config';
+import { getLang } from '../i18n';
+import {
+  Music2, Search, Loader2, AlertTriangle, ChevronUp, ChevronDown,
+  Filter, RotateCcw, CheckCircle2, XCircle, Sparkles, Settings2, X, Eye,
+} from 'lucide-react';
+
+const MODES = [
+  { id: 'off', label: 'Tắt lọc — xem hết' },
+  { id: 'keyword', label: 'Lọc caption/hashtag' },
+  { id: 'vision', label: 'AI nhìn hình (vision)' },
+  { id: 'both', label: 'Caption + AI nhìn hình' },
+];
+
+// Normalize: bỏ dấu tiếng Việt + lowercase để khớp cả caption không dấu
+function norm(s) {
+  return String(s || '').toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+}
+function captionMatches(caption, topics) {
+  const c = norm(caption);
+  return topics.some((tp) => { const k = norm(tp); return k && c.includes(k); });
+}
+function fmtCount(n) {
+  if (n == null) return '';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+function parseTopics(text) {
+  return String(text || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean).slice(0, 12);
+}
+// Đường phát chính: backend giải link qua tikwm rồi pipe (CDN TikTok chặn IP → 403).
+// Cùng origin nên canvas chụp frame không bị chặn.
+function mediaUrl(v) {
+  return `/api/services/tiktok/media?id=${encodeURIComponent(v.id)}&user=${encodeURIComponent(String(v.author || '').replace(/^@/, ''))}`;
+}
+// Ảnh bìa: thử qua proxy stream cũ (ảnh thường không bị chặn gắt như video).
+function coverUrl(u) {
+  return `/api/services/tiktok/stream?u=${encodeURIComponent(u)}`;
+}
+function captureFrame(el) {
+  try {
+    if (!el || !el.videoWidth) return null;
+    const w = 320;
+    const h = Math.max(2, Math.round(w * (el.videoHeight / el.videoWidth)));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(el, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.65);
+  } catch (e) { return null; }
+}
+
+// ─── 1 video trong feed ──────────────────────────────────────────────────────
+function FeedVideo({ video, active, onRef, onTime, onError }) {
+  const [waiting, setWaiting] = useState(true);
+  useEffect(() => {
+    // Không pause/play trực tiếp ở đây — <video> chỉ mount khi gần đang xem
+  }, [active]);
+  return (
+    <div className="relative w-full h-full flex items-center justify-center bg-black">
+      {waiting && <Loader2 size={28} className="absolute text-white/50 animate-spin z-10" />}
+      <video
+        ref={(el) => { onRef(el); }}
+        src={mediaUrl(video)}
+        className="max-h-full max-w-full object-contain"
+        loop muted playsInline preload={active ? 'auto' : 'metadata'}
+        onCanPlay={() => setWaiting(false)}
+        onPlaying={() => setWaiting(false)}
+        onWaiting={() => setWaiting(true)}
+        onTimeUpdate={(e) => onTime && onTime(video, e.target)}
+        onError={() => { setWaiting(false); onError && onError(video); }}
+      />
+    </div>
+  );
+}
+
+export default function TikTokFeedTab({ showToast }) {
+  const lang = getLang();
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [srcUser, setSrcUser] = useState('');
+  const [srcTag, setSrcTag] = useState('');
+  const [limit, setLimit] = useState(15);
+  const [topicsText, setTopicsText] = useState('váy\nđầm xinh\nmèo cute');
+  const [mode, setMode] = useState('both');
+
+  const [videos, setVideos] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [verdicts, setVerdicts] = useState({});   // id -> {match, reason, via, checking}
+  const [skipLog, setSkipLog] = useState([]);     // {id, caption, match, reason, via, at}
+  const [endReached, setEndReached] = useState(false);
+  const [cdnErr, setCdnErr] = useState({});       // id -> true
+
+  const videoEls = useRef({});                    // id -> <video> element (chụp frame)
+  const classifiedRef = useRef(new Set());        // id đã classify vision
+  const skipTimerRef = useRef(null);
+  const navLock = useRef(0);
+  const touchY = useRef(null);
+  const modeRef = useRef(mode);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  const topics = useMemo(() => parseTopics(topicsText), [topicsText]);
+  const topicsRef = useRef(topics);
+  useEffect(() => { topicsRef.current = topics; }, [topics]);
+
+  const current = videos[idx] || null;
+  const kept = skipLog.filter((l) => l.match).length;
+  const skipped = skipLog.filter((l) => !l.match).length;
+
+  const pushLog = useCallback((video, entry) => {
+    setSkipLog((s) => [{ id: video.id, caption: video.caption, author: video.author, ...entry, at: Date.now() }, ...s].slice(0, 60));
+  }, []);
+
+  const go = useCallback((dir) => {
+    clearTimeout(skipTimerRef.current); // người dùng tự điều khiển → hủy auto-skip đang chờ
+    setEndReached(false); // lướt tay khỏi màn hình cuối → mở lại feed
+    setIdx((i) => {
+      const next = Math.min(Math.max(i + dir, 0), Math.max((videos.length || 1) - 1, 0));
+      return next;
+    });
+  }, [videos.length]);
+
+  // Auto-skip khi tới video cuối KHÔNG khớp
+  const scheduleSkip = useCallback((fromId) => {
+    clearTimeout(skipTimerRef.current);
+    skipTimerRef.current = setTimeout(() => {
+      setIdx((i) => {
+        const v = videos[i];
+        if (v && v.id === fromId) {
+          if (i < videos.length - 1) return i + 1;
+          setEndReached(true);
+        }
+        return i;
+      });
+    }, 750);
+  }, [videos]);
+
+  // ── Lớp 1: lọc caption/hashtag (chạy ngay khi vào video) ──
+  useEffect(() => {
+    const v = videos[idx];
+    if (!v) return undefined;
+    if (mode !== 'keyword' && mode !== 'both') return undefined;
+    if (!topics.length) return undefined;
+    if (!captionMatches(v.caption, topics)) {
+      const entry = { match: false, reason: 'caption/hashtag không khớp', via: 'caption' };
+      setVerdicts((s) => ({ ...s, [v.id]: entry }));
+      pushLog(v, entry);
+      const timer = setTimeout(() => scheduleSkip(v.id), 850);
+      return () => clearTimeout(timer);
+    }
+    setVerdicts((s) => ({ ...s, [v.id]: s[v.id] || { match: true, reason: 'caption khớp chủ đề', via: 'caption' } }));
+    return undefined;
+  }, [idx, videos, mode, topics, pushLog, scheduleSkip]);
+
+  // ── Lớp 2: AI nhìn hình — chụp frame khi video phát được ~0.6s ──
+  const handleTime = useCallback(async (video, el) => {
+    if (el.currentTime < 0.6) return;
+    const m = modeRef.current;
+    if (m !== 'vision' && m !== 'both') return;
+    if (classifiedRef.current.has(video.id)) return;
+    classifiedRef.current.add(video.id);
+    const frame = captureFrame(el);
+    if (!frame) return;
+    setVerdicts((s) => ({ ...s, [video.id]: s[video.id] && !s[video.id].checking ? s[video.id] : { checking: true, via: 'ai' } }));
+    try {
+      const data = await apiFetchPublic('/services/tiktok/classify', {
+        method: 'POST',
+        body: JSON.stringify({ image: frame, topics: topicsRef.current, caption: video.caption }),
+      });
+      if (!data.success) throw new Error(data.error || 'classify lỗi');
+      const entry = { match: data.match !== false, reason: data.reason || '', via: 'ai' };
+      setVerdicts((s) => ({ ...s, [video.id]: entry }));
+      pushLog(video, entry);
+      if (!entry.match) scheduleSkip(video.id);
+    } catch (e) {
+      // AI lỗi → fail-open: giữ video, ghi lý do
+      const entry = { match: true, reason: 'AI lỗi: ' + String(e.message || '').slice(0, 40), via: 'ai' };
+      setVerdicts((s) => ({ ...s, [video.id]: entry }));
+      pushLog(video, entry);
+    }
+  }, [pushLog, scheduleSkip]);
+
+  // ── Tải feed ──
+  const loadFeed = useCallback(async () => {
+    if (!srcUser.trim() && !srcTag.trim()) {
+      setError('Nhập @username hoặc #hashtag');
+      return;
+    }
+    setLoading(true); setError(''); setEndReached(false);
+    setVideos([]); setIdx(0); setVerdicts({}); setSkipLog([]); setCdnErr({});
+    classifiedRef.current = new Set();
+    clearTimeout(skipTimerRef.current);
+    try {
+      const q = new URLSearchParams({ limit: String(limit) });
+      if (srcUser.trim()) q.set('user', srcUser.trim()); else q.set('tag', srcTag.trim().replace(/^#/, ''));
+      const data = await apiFetchPublic(`/services/tiktok/feed?${q.toString()}`);
+      if (!data.success) throw new Error(data.error || 'Lỗi feed');
+      setVideos(data.videos || []);
+      if (!data.videos || !data.videos.length) setError('Feed rỗng — thử tài khoản/hashtag khác');
+      setPanelOpen(false);
+    } catch (e) {
+      setError(e.message || 'Không tải được feed');
+    } finally {
+      setLoading(false);
+    }
+  }, [srcUser, srcTag, limit]);
+
+  // autoplay video đang xem
+  useEffect(() => {
+    Object.entries(videoEls.current).forEach(([id, el]) => {
+      if (!el) return;
+      if (current && id === current.id) {
+        el.muted = true;
+        el.play().catch(() => {});
+      } else {
+        el.pause();
+      }
+    });
+  }, [idx, videos, current]);
+
+  useEffect(() => () => clearTimeout(skipTimerRef.current), []);
+
+  // bàn phím: ↑↓ lướt
+  useEffect(() => {
+    const h = (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); go(1); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); go(-1); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [go]);
+
+  const onWheel = (e) => {
+    const now = Date.now();
+    if (now - navLock.current < 650 || Math.abs(e.deltaY) < 24) return;
+    navLock.current = now;
+    go(e.deltaY > 0 ? 1 : -1);
+  };
+  const onTouchStart = (e) => { touchY.current = e.touches[0].clientY; };
+  const onTouchEnd = (e) => {
+    if (touchY.current == null) return;
+    const dy = touchY.current - e.changedTouches[0].clientY;
+    touchY.current = null;
+    if (Math.abs(dy) > 45) go(dy > 0 ? 1 : -1);
+  };
+
+  const verdict = current ? verdicts[current.id] : null;
+
+  return (
+    <div className="flex h-full w-full overflow-hidden bg-[var(--bg-main)]">
+      {/* ─── PANEL CÀI ĐẶT / LỌC ─── */}
+      {panelOpen && (
+        <div className="w-80 shrink-0 border-r border-white/5 bg-[var(--bg-sidebar)] p-4 overflow-y-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Music2 size={16} className="text-pink-400" /> TikTok Feed — Lọc chủ đề
+            </h3>
+            <button onClick={() => setPanelOpen(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[11px] font-semibold text-slate-400">Nguồn (@username hoặc #hashtag)</label>
+            <div className="flex gap-2">
+              <input
+                value={srcUser} onChange={(e) => { setSrcUser(e.target.value); setSrcTag(''); }}
+                placeholder="@username" className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40"
+              />
+              <input
+                value={srcTag} onChange={(e) => { setSrcTag(e.target.value); setSrcUser(''); }}
+                placeholder="#hashtag" className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400">Số video:</span>
+              <select value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))} className="px-2 py-1 rounded-lg bg-[#131417] border border-white/5 text-xs text-white focus:outline-none">
+                {[10, 15, 20, 30].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <button
+                onClick={loadFeed} disabled={loading}
+                className="ml-auto px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Tải feed
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2 border-t border-white/5 pt-3">
+            <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+              <Filter size={12} className="text-cyan-400" /> Kiểu lọc
+            </label>
+            <select value={mode} onChange={(e) => { clearTimeout(skipTimerRef.current); setMode(e.target.value); }} className="w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-cyan-500/40">
+              {MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            <label className="text-[11px] font-semibold text-slate-400 block pt-1">Chủ đề muốn xem (mỗi dòng/comma 1 chủ đề)</label>
+            <textarea
+              value={topicsText} onChange={(e) => setTopicsText(e.target.value)} rows={5}
+              placeholder={'váy\nđầm\nmèo cute'}
+              className="w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-cyan-500/40 resize-y"
+            />
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              <Sparkles size={10} className="inline text-cyan-400 mr-1" />
+              Không khớp → app <b className="text-slate-300">tự lướt</b> sang video kế. "AI nhìn hình" chụp frame giây 0.6s gửi vision model nhận diện (mặc váy/quần, bối cảnh...).
+            </p>
+          </div>
+
+          <div className="border-t border-white/5 pt-3 space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12} /> Giữ: {kept}</span>
+              <span className="text-rose-400 flex items-center gap-1"><XCircle size={12} /> Bỏ qua: {skipped}</span>
+            </div>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+              {skipLog.length === 0 && <p className="text-[10px] text-slate-500">Chưa có log — tải feed và xem đi.</p>}
+              {skipLog.map((l, i) => (
+                <div key={`${l.id}-${i}`} className={`p-2 rounded-lg border text-[10px] leading-snug ${l.match ? 'bg-emerald-500/5 border-emerald-500/20 text-slate-300' : 'bg-rose-500/5 border-rose-500/20 text-slate-300'}`}>
+                  <span className={`inline-flex items-center gap-1 font-semibold ${l.match ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {l.match ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+                    {l.match ? 'GIỮ' : 'BỎ'} ({l.via === 'ai' ? 'AI' : 'caption'})
+                  </span>
+                  <span className="text-slate-500"> {l.reason}</span>
+                  <p className="text-slate-500 truncate mt-0.5">{l.author} · {l.caption.slice(0, 60) || '(không caption)'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── SÂN KHẤU FEED ─── */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex items-center justify-between px-3 py-2">
+          {!panelOpen && (
+            <button onClick={() => setPanelOpen(true)} className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/5 text-slate-300 text-xs flex items-center gap-1.5 hover:text-white">
+              <Settings2 size={13} /> Lọc chủ đề
+            </button>
+          )}
+          {current && (
+            <span className="text-[11px] text-slate-400 ml-auto">
+              {idx + 1}/{videos.length} · <Eye size={11} className="inline" /> {fmtCount(current.views)} · {current.author}
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1 min-h-0 px-3 pb-3">
+          <div
+            className="relative h-full w-full overflow-hidden rounded-2xl bg-black border border-white/5 select-none"
+            onWheel={onWheel} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
+          >
+            {!current && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
+                <Music2 size={44} className="text-pink-400/60" />
+                <p className="text-sm font-semibold text-white">Xem TikTok + lọc theo chủ đề của bạn</p>
+                <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
+                  Nhập @username hoặc #hashtag → chọn kiểu lọc → nhập chủ đề muốn xem.
+                  Video không đúng chủ đề sẽ <b className="text-slate-300">tự lướt đi</b>. Lăn chuột / phím ↑↓ để tự lướt.
+                </p>
+                {loading && <Loader2 size={22} className="text-pink-400 animate-spin" />}
+                {error && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1.5"><AlertTriangle size={13} /> {error}</p>
+                )}
+              </div>
+            )}
+
+            {current && (
+              <>
+                <div
+                  className="h-full transition-transform duration-500 ease-out"
+                  style={{ transform: `translateY(-${idx * 100}%)` }}
+                >
+                  {videos.map((v, i) => (
+                    <div key={v.id} className="h-full w-full">
+                      {Math.abs(i - idx) <= 1 && !cdnErr[v.id] ? (
+                        <FeedVideo
+                          video={v} active={i === idx}
+                          onRef={(el) => { videoEls.current[v.id] = el; }}
+                          onTime={handleTime}
+                          onError={(vid) => setCdnErr((s) => ({ ...s, [vid.id]: true }))}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-black">
+                          {v.cover && !cdnErr[v.id] ? (
+                            <img src={coverUrl(v.cover)} alt="" className="max-h-full max-w-full object-contain opacity-60" loading="lazy" onError={(e) => { e.target.style.display = 'none'; }} />
+                          ) : (
+                            <Music2 size={30} className="text-white/20" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* badge kết quả lọc */}
+                {mode !== 'off' && verdict && (
+                  <div className={`absolute top-3 left-3 px-2.5 py-1.5 rounded-xl text-[11px] font-medium flex items-center gap-1.5 backdrop-blur-md border ${
+                    verdict.checking ? 'bg-white/10 border-white/20 text-white/80'
+                      : verdict.match ? 'bg-emerald-500/25 border-emerald-400/40 text-emerald-200'
+                        : 'bg-rose-500/25 border-rose-400/40 text-rose-200'}`}>
+                    {verdict.checking ? <Loader2 size={12} className="animate-spin" />
+                      : verdict.match ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                    {verdict.checking ? 'AI đang xem...'
+                      : `${verdict.match ? 'GIỮ' : 'TỰ LƯỚT'}${verdict.reason ? ` — ${verdict.reason}` : ''}`}
+                  </div>
+                )}
+
+                {/* caption overlay */}
+                <div className="absolute bottom-0 inset-x-0 p-4 pb-6 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none">
+                  <p className="text-xs font-bold text-white">{current.author}{current.nickname ? ` · ${current.nickname}` : ''}</p>
+                  <p className="text-[11px] text-slate-200 line-clamp-2 mt-0.5">{current.caption || '(không có caption)'}</p>
+                </div>
+
+                {/* nút lướt */}
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+                  <button onClick={() => go(-1)} disabled={idx === 0} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-30"><ChevronUp size={18} /></button>
+                  <button onClick={() => go(1)} disabled={idx >= videos.length - 1} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-30"><ChevronDown size={18} /></button>
+                </div>
+
+                {endReached && (
+                  <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                    <p className="text-sm font-semibold text-white">Hết feed 🎉</p>
+                    <p className="text-xs text-slate-300">Giữ {kept} · Tự lướt {skipped} video không đúng chủ đề</p>
+                    <button onClick={loadFeed} className="px-4 py-2 rounded-xl bg-pink-500/80 hover:bg-pink-500 text-white text-xs font-medium flex items-center gap-1.5">
+                      <RotateCcw size={13} /> Tải lại feed
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
