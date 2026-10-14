@@ -13,6 +13,7 @@ const { GUEST_USER_ID } = require('../ensure-admin');
 const { encryptKey, decryptKey } = require('../utils/cryptoKeys');
 const { searchDocuments } = require('../services/ragService');
 const { rateLimit } = require('../middleware/rateLimit');
+const kiloQuota = require('../middleware/kiloQuota');
 const { logActivity } = require('../utils/activityLog');
 const agentEngine = require('../services/agentEngine');
 const modelRouter = require('../services/modelRouter');
@@ -1104,6 +1105,13 @@ ${memoryText || '- Người dùng thích làm việc chuyên nghiệp, nội dun
             }
 
           } else if (['openai', 'deepseek', 'groq', 'github', 'custom', 'xkiro', 'agentrouter', 'bai', 'kiosapi', 'unorouter', 'nvidia', 'mistral', 'cerebras', 'openrouter', 'mintrouter', 'kiraai', 'bazaarlink', 'opencode', 'kilo',].includes(selectedProvider)) {
+            // ─── KILO QUOTA: chia lượt Kilo free theo từng người (rolling 1h) ───
+            if (selectedProvider === 'kilo') {
+              const kq = kiloQuota.allow(req);
+              if (!kq.ok) {
+                return saveAIMessageAndRespond(id, kiloQuota.message(kq, !req.user), res);
+              }
+            }
             let endpoint = "https://api.openai.com/v1/chat/completions";
             if (selectedProvider === 'deepseek') endpoint = "https://api.deepseek.com/chat/completions";
             else if (selectedProvider === 'groq') endpoint = "https://api.groq.com/openai/v1/chat/completions";
@@ -1752,6 +1760,16 @@ router.post('/conversations/:id/messages/stream', rateLimit({ windowMs: 60000, m
         let streamDone = false, lastStreamErr = null;
         for (let ai2 = 0; ai2 < attempts.length && !streamDone; ai2++) {
           const att = attempts[ai2];
+          // ─── KILO QUOTA (stream): attempt Kilo cũng ăn quota theo từng người ───
+          if (att.provider === 'kilo') {
+            const kqS = kiloQuota.allow(req);
+            if (!kqS.ok) {
+              // Còn attempt khác (auto-router fallback) → bỏ qua Kilo thử candidate kế tiếp
+              if (ai2 < attempts.length - 1) continue;
+              sendSSE({ type: 'error', message: kiloQuota.message(kqS, !req.user) });
+              return endStream();
+            }
+          }
           let attKey = keyToUse, attBase = baseUrl;
           if (ai2 > 0) {
             const rp2 = await modelRouter.resolveProvider(att.provider);
