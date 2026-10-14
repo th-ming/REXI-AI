@@ -55,7 +55,7 @@ const BASE_RULES = {
   cohere:     { max: 8,   windowMs: 60 * 1000 },
   groq:       { max: 25,  windowMs: 60 * 1000 },
   mistral:    { max: 30,  windowMs: 60 * 1000 },           // mistral generous
-  nvidia:     { max: 15,  windowMs: 60 * 1000 },
+  nvidia:     { max: 50,  windowMs: 60 * 1000 },
   cerebras:   { max: 20,  windowMs: 60 * 1000 },
   xkiro:      { max: 999, windowMs: 60 * 1000 },           // unlimited-ish
   agentrouter:{ max: 5,   windowMs: 60 * 1000 },
