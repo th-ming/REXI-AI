@@ -2355,18 +2355,28 @@ router.post('/youtube/summarize', async (req, res) => {
 const tiktokService = require('../services/tiktokService');
 const chatExecutor = require('../services/chatExecutor');
 
-// Feed @user / #hashtag — Playwright scrape (yt-dlp gãy extractor + API thô cần signature)
+// Feed @user / #hashtag — Playwright scrape (yt-dlp gãy extractor + API thô cần signature).
+// Cào lâu (tới ~90s) nên gửi nhịp giữ kết nối mỗi 10s (proxy cắt khi im lặng quá lâu).
 router.get('/tiktok/feed', rateLimit({ windowMs: 60000, max: 20 }), async (req, res) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  const giuKetNoi = setInterval(() => { try { res.write(' '); } catch (e) {} }, 10000);
   try {
     const data = await tiktokService.fetchFeed({
       user: req.query.user,
       tag: req.query.tag,
       limit: req.query.limit,
     });
-    res.json({ success: true, ...data });
+    clearInterval(giuKetNoi);
+    res.end(JSON.stringify({ success: true, ...data }));
   } catch (e) {
+    clearInterval(giuKetNoi);
     console.error('[TikTok] feed error:', (e.message || e).toString().slice(0, 200));
-    res.status(502).json({ success: false, error: (e.message || 'TikTok feed lỗi').toString().slice(0, 300) });
+    if (!res.headersSent) {
+      res.statusCode = 502;
+      res.end(JSON.stringify({ success: false, error: (e.message || 'TikTok feed lỗi').toString().slice(0, 300) }));
+    } else {
+      try { res.end(JSON.stringify({ success: false, error: (e.message || 'TikTok feed lỗi').toString().slice(0, 300) })); } catch (e2) {}
+    }
   }
 });
 
