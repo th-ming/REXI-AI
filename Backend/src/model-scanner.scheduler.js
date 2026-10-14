@@ -391,6 +391,24 @@ function modalityOf(modelId) {
   return 'chat';
 }
 
+function isKnownAgentCapable(modelId) {
+  const m = String(modelId).toLowerCase();
+  if (m.includes('gpt-4') || m.includes('gpt-3.5-turbo')) return true;
+  if (m.includes('claude-3') || m.includes('claude-3.5') || m.includes('claude-3.7') || m.includes('claude-4')) return true;
+  if (m.includes('gemini-1.5') || m.includes('gemini-2') || m.includes('gemini-2.5')) return true;
+  if (m.includes('mistral-large') || m.includes('mistral-medium') || m.includes('mistral-small')) return true;
+  if (m.includes('command-r') || m.includes('command-a')) return true;
+  if (m.includes('llama-3.1') || m.includes('llama-3.2') || m.includes('llama-3.3') || m.includes('llama-4')) return true;
+  if (m.includes('nemotron') || m.includes('nemotron-3')) return true;
+  if (m.includes('deepseek-v3') || m.includes('deepseek-r1')) return true;
+  if (m.includes('qwen-2.5') || m.includes('qwen-3') || m.includes('qwen2.5') || m.includes('qwen3')) return true;
+  if (m.includes('yi-1.5') || m.includes('yi-34b') || m.includes('yi-large')) return true;
+  if (m.includes('glm-4') || m.includes('glm-4.5') || m.includes('glm-5')) return true;
+  if (m.includes('kimi') || m.includes('moonshot')) return true;
+  if (m.includes('doubao') || m.includes('deepseek-coder')) return true;
+  return false;
+}
+
 // Dem fetch-fail lien tiep theo provider (luu app_settings, khoi migration DB).
 // Fetch fail 3 lan lien tiep -> model khong kiem chung duoc -> TAT (song lai tu bat).
 async function getFailCount(providerId) {
@@ -422,8 +440,6 @@ async function probeAgentJson(providerId, apiKey, modelId) {
       url = 'https://api.anthropic.com/v1/messages';
       headers = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
       payload = { model: modelId, max_tokens: 120, temperature: 0, system: sys, messages: [{ role: 'user', content: usr }] };
-    } else if (providerId === 'opencode') {
-      return { ok: false };
     } else {
       const cfg = PROVIDER_ENDPOINTS[providerId];
       if (!cfg || !cfg.endpoint) return { ok: false };
@@ -802,9 +818,9 @@ async function scanProvider(providerId) {
     keptOld = true;
     keptOldReason = classifyZeroWorkingReason(results);
     console.warn(`[ModelScanner] ${cfg.name}: toàn bộ lỗi tạm thời — giữ nguyên model cũ. Lý do: ${keptOldReason}`);
-  }
+}
 
-  // ─── AGENT-CAP PROBE: working model nao tra JSON ReAct dung format -> agent_ok=1.
+  // �"?�"?�"? AGENT-CAP PROBE: working model nao tra JSON ReAct dung format -> agent_ok=1.
   // Picker Agent Mode chi hien model co flag (thay vi doan mo). TTL 30d, cap 8/provider/luot,
   // dung ngay khi fuse/429, model chua probe bao gio test truoc. Bo qua neu health phase da fuse.
   try {
@@ -816,14 +832,31 @@ async function scanProvider(providerId) {
       const cands = workingList
         .map(m => String(m.id))
         .filter(id => { const t = probedMap.get(id); return t === undefined || isNaN(t) || (now2 - t) > AGENT_TTL; });
-      // Model agent mac dinh (AGENT_MODEL) probe TRUOC TIEN — dam bao con agent that su
+      // Pre-mark known agent-capable models (tool-calling families) without API probe
+      const knownAgentOk = [];
+      const needProbe = [];
+      for (const id of cands) {
+        if (isKnownAgentCapable(id)) {
+          knownAgentOk.push(id);
+        } else {
+          needProbe.push(id);
+        }
+      }
+      if (knownAgentOk.length) {
+        await runSql(`INSERT INTO model_agent_cap (ma_model, ma_nha_cung_cap, agent_ok, thoi_gian_test)
+          VALUES ${knownAgentOk.map(() => '(?, ?, 1, ' + NOW() + ')').join(', ')}
+          ON CONFLICT(ma_model, ma_nha_cung_cap) DO UPDATE SET agent_ok = excluded.agent_ok, thoi_gian_test = ${NOW()}`,
+          knownAgentOk.flatMap(id => [id, providerId]));
+        console.log(`[ModelScanner] ${cfg.name} AGENT-OK (static): ${knownAgentOk.join(', ')}`);
+      }
+      // Model agent mac dinh (AGENT_MODEL) probe TRUOC TIEN �?" dam bao con agent that su
       // dung luon co flag som, khong cho doi sau hang doi throttle.
       const agentPrio = process.env.AGENT_MODEL || 'deepseek-v4-flash:free';
       const isPrio = (id) => id === agentPrio || id.endsWith('/' + agentPrio);
-      cands.sort((a, b) => ((isPrio(b) ? 0 : 1) - (isPrio(a) ? 0 : 1)) || ((probedMap.has(a) ? 1 : 0) - (probedMap.has(b) ? 1 : 0)));
+      needProbe.sort((a, b) => ((isPrio(b) ? 0 : 1) - (isPrio(a) ? 0 : 1)) || ((probedMap.has(a) ? 1 : 0) - (probedMap.has(b) ? 1 : 0)));
       let done = 0;
-      for (const id of cands) {
-        if (done >= AGENT_CAP) { console.log(`[ModelScanner] ${cfg.name}: agent-probe ${done}/${cands.length} (con lai luot sau)`); break; }
+      for (const id of needProbe) {
+        if (done >= AGENT_CAP) { console.log(`[ModelScanner] ${cfg.name}: agent-probe ${done}/${needProbe.length} (con lai luot sau)`); break; }
         const r = await probeAgentJson(providerId, apiKey, id);
         await runSql(`INSERT INTO model_agent_cap (ma_model, ma_nha_cung_cap, agent_ok, thoi_gian_test)
           VALUES (?, ?, ?, ${NOW()})
