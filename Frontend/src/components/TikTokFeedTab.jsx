@@ -120,6 +120,59 @@ export default function TikTokFeedTab({ showToast }) {
   const [sessionInfo, setSessionInfo] = useState(null); // {logged, cookieCount}
   const [cookieText, setCookieText] = useState('');
   const [sessionMsg, setSessionMsg] = useState('');
+  // Đăng nhập bằng QR (quét bằng app TikTok trên điện thoại)
+  const [qrLogin, setQrLogin] = useState(null); // {loginId, qr, status}
+  const qrTimer = useRef(null);
+
+  const luuPhien = useCallback((data) => {
+    setSessionToken(data.token);
+    setSessionInfo({ logged: data.logged, cookieCount: data.cookieCount });
+    setCookieText('');
+    setQrLogin(null);
+    clearInterval(qrTimer.current);
+    try { localStorage.setItem('tt_session', data.token); } catch (e) {}
+    setSessionMsg(data.logged ? 'Đã gắn nick TikTok ✓ — lướt Dành cho bạn như nick thật' : 'Đã lưu phiên (chưa rõ đăng nhập — thử tải feed)');
+  }, []);
+
+  const startQr = useCallback(async () => {
+    setSessionMsg('Đang mở mã QR...');
+    try {
+      const data = await apiFetchPublic('/services/tiktok/qr/start', { method: 'POST', body: '{}' });
+      if (!data.success) throw new Error(data.error || 'Không mở được QR');
+      if (data.qr) {
+        setQrLogin({ loginId: data.loginId, qr: data.qr, status: 'waiting' });
+        setSessionMsg('');
+      } else {
+        // QR chưa chụp xong (browser đang mở) — poll chờ
+        setQrLogin({ loginId: data.loginId, qr: null, status: 'starting' });
+        setSessionMsg('');
+      }
+      clearInterval(qrTimer.current);
+      qrTimer.current = setInterval(async () => {
+        try {
+          const st = await apiFetchPublic(`/services/tiktok/qr/status?loginId=${encodeURIComponent(data.loginId)}`);
+          if (!st.success) return;
+          if (st.status === 'done' && st.token) {
+            luuPhien(st);
+          } else if (st.status === 'expired') {
+            clearInterval(qrTimer.current);
+            setQrLogin(null);
+            setSessionMsg('Mã hết hạn (150s) — bấm lại để lấy mã mới');
+          } else if (st.status === 'error') {
+            clearInterval(qrTimer.current);
+            setQrLogin(null);
+            setSessionMsg('Lỗi mở QR: ' + (st.error || 'thử lại'));
+          } else {
+            setQrLogin((q) => (q ? { ...q, qr: st.qr || q.qr, status: st.status } : q));
+          }
+        } catch (e) { /* poll lỗi thì thôi, lượt sau */ }
+      }, 3000);
+    } catch (e) {
+      setSessionMsg('Lỗi: ' + (e.message || 'không mở được QR'));
+    }
+  }, [luuPhien]);
+
+  useEffect(() => () => clearInterval(qrTimer.current), []);
 
   const videoEls = useRef({});                    // id -> <video> element (chụp frame)
   const classifiedRef = useRef(new Set());        // id đã classify vision
@@ -245,7 +298,7 @@ export default function TikTokFeedTab({ showToast }) {
     }
   }, [src, srcUser, srcTag, limit, sessionToken]);
 
-  // ── Gắn nick TikTok thật (copy document.cookie trên tiktok.com đã đăng nhập) ──
+  // ── Gắn nick TikTok thật (cách thủ công: copy document.cookie) ──
   const connectNick = useCallback(async () => {
     if (!cookieText.trim()) { setSessionMsg('Dán chuỗi cookie trước đã'); return; }
     setSessionMsg('Đang kết nối...');
@@ -255,15 +308,11 @@ export default function TikTokFeedTab({ showToast }) {
         body: JSON.stringify({ cookies: cookieText.trim() }),
       });
       if (!data.success) throw new Error(data.error || 'Kết nối lỗi');
-      setSessionToken(data.token);
-      setSessionInfo({ logged: data.logged, cookieCount: data.cookieCount });
-      setCookieText('');
-      try { localStorage.setItem('tt_session', data.token); } catch (e) {}
-      setSessionMsg(data.logged ? 'Đã gắn nick TikTok ✓ — lướt Dành cho bạn như nick thật' : 'Đã lưu cookie (chưa thấy dấu đăng nhập — kiểm tra lại)');
+      luuPhien(data);
     } catch (e) {
       setSessionMsg('Lỗi: ' + (e.message || 'không kết nối được'));
     }
-  }, [cookieText]);
+  }, [cookieText, luuPhien]);
 
   const disconnectNick = useCallback(() => {
     setSessionToken('');
@@ -386,25 +435,51 @@ export default function TikTokFeedTab({ showToast }) {
                 </span>
                 <button onClick={disconnectNick} className="text-[11px] text-slate-500 hover:text-rose-400 underline">Gỡ</button>
               </div>
+            ) : qrLogin ? (
+              <div className="space-y-2 text-center">
+                {qrLogin.qr ? (
+                  <>
+                    <img src={qrLogin.qr} alt="Mã QR đăng nhập TikTok" className="mx-auto rounded-xl border border-white/10 max-w-[220px]" />
+                    <p className="text-[11px] text-slate-300">Mở app TikTok trên điện thoại → quét mã này để đăng nhập</p>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
+                    <Loader2 size={12} className="animate-spin" /> Đang mở mã QR...
+                  </p>
+                )}
+                <button
+                  onClick={() => { clearInterval(qrTimer.current); setQrLogin(null); setSessionMsg(''); }}
+                  className="text-[11px] text-slate-500 hover:text-white underline"
+                >
+                  Hủy
+                </button>
+              </div>
             ) : (
               <>
-                <textarea
-                  value={cookieText} onChange={(e) => setCookieText(e.target.value)} rows={2}
-                  placeholder="Dán chuỗi document.cookie ở đây..."
-                  className="w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40 resize-y"
-                />
                 <button
-                  onClick={connectNick}
-                  className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 text-xs font-medium hover:bg-white/10"
+                  onClick={startQr}
+                  className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium"
                 >
-                  Kết nối nick
+                  Đăng nhập bằng QR
                 </button>
-                <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Cách lấy: mở <b className="text-slate-300">tiktok.com</b> (đã đăng nhập) → bấm <b className="text-slate-300">F12</b> → tab Console → gõ <b className="text-slate-300">document.cookie</b> → Enter → copy cả chuỗi dán vào đây. Cookie chỉ giữ trong máy này.
-                </p>
+                <details className="text-[10px] text-slate-500">
+                  <summary className="cursor-pointer hover:text-slate-300">Cách khác: dán cookie thủ công</summary>
+                  <textarea
+                    value={cookieText} onChange={(e) => setCookieText(e.target.value)} rows={2}
+                    placeholder="Dán chuỗi document.cookie ở đây..."
+                    className="mt-1.5 w-full px-3 py-2 rounded-xl bg-[#131417] border border-white/5 text-xs text-white focus:outline-none focus:border-pink-500/40 resize-y"
+                  />
+                  <button
+                    onClick={connectNick}
+                    className="mt-1 w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 text-xs font-medium hover:bg-white/10"
+                  >
+                    Kết nối
+                  </button>
+                  <p className="mt-1 leading-relaxed">Mở tiktok.com (đã đăng nhập) → F12 → Console → gõ document.cookie → copy dán vào đây.</p>
+                </details>
               </>
             )}
-            {sessionMsg && !sessionToken && <p className="text-[10px] text-amber-400">{sessionMsg}</p>}
+            {sessionMsg && <p className="text-[10px] text-amber-400">{sessionMsg}</p>}
           </div>
 
           <div className="space-y-2 border-t border-white/5 pt-3">

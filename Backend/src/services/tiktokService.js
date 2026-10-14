@@ -38,9 +38,84 @@ function cleanTag(t) {
 
 // ─── Phiên đăng nhập (cookie TikTok của user) ──────────────────────────────
 // Lướt "Dành cho bạn" như nick thật + tăng độ tin cậy qua bot wall.
-// Cách lấy: mở tiktok.com (đã đăng nhập) → F12 console → gõ document.cookie → copy.
+// 2 cách: quét QR (khuyên dùng) hoặc dán document.cookie thủ công.
 // FE: POST /tiktok/session {cookies} → {token}; token đi kèm feed/media.
 const _sessions = new Map(); // token -> { cookieString, exp }
+// ─── Đăng nhập bằng QR (quét bằng app TikTok trên điện thoại) ───────────────
+// FE: POST /tiktok/qr/start → {loginId}; hiện QR; poll GET /tiktok/qr/status
+// → done: {token} (phiên như createSession). Hết 150s không quét thì expired.
+const _logins = new Map(); // loginId -> { status, qr, token, logged, cookieCount, error }
+const QR_TIMEOUT = 150000;
+
+async function startLogin() {
+  for (const [id, rec] of _logins) {
+    if (rec.status === 'waiting') return { loginId: id, qr: rec.qr, reused: true };
+  }
+  const loginId = require('crypto').randomBytes(8).toString('hex');
+  const rec = { status: 'starting', qr: null, token: null, logged: false, cookieCount: 0, error: null, exp: Date.now() + QR_TIMEOUT + 30000 };
+  _logins.set(loginId, rec);
+  if (_logins.size > 10) _logins.delete(_logins.keys().next().value);
+  chayLogin(loginId).catch((e) => {
+    const r = _logins.get(loginId);
+    if (r && r.status !== 'done') { r.status = 'error'; r.error = String((e && e.message) || e).slice(0, 150); }
+  });
+  return { loginId };
+}
+
+async function chayLogin(loginId) {
+  const rec = _logins.get(loginId);
+  if (!rec) return;
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+  });
+  const han = Date.now() + QR_TIMEOUT;
+  try {
+    const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
+    const page = await ctx.newPage();
+    await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+    await page.waitForTimeout(6000);
+    // Trang login bắt chọn cách đăng nhập trước → bấm vào mục "mã QR"
+    await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(5000);
+    // Chụp mã QR (ưu tiên đúng khung QR, rớt thì cả trang)
+    let anh = await page.locator('canvas, img[src*="qr"], div[class*="qr"] canvas').first().screenshot().catch(() => null);
+    if (!anh) anh = await page.screenshot().catch(() => null);
+    if (!anh) throw new Error('Không chụp được mã QR');
+    rec.qr = 'data:image/png;base64,' + anh.toString('base64');
+    rec.status = 'waiting';
+    // Chờ user quét: đăng nhập xong là có cookie sessionid + rời trang login
+    while (Date.now() < han) {
+      await page.waitForTimeout(3000);
+      const url = page.url();
+      const cookies = await ctx.cookies('https://www.tiktok.com').catch(() => []);
+      const chuoi = cookies.map((c) => c.name + '=' + c.value).join('; ');
+      if (!url.includes('/login') || /sessionid|sid_tt/i.test(chuoi)) {
+        if (/sessionid|sid_tt/i.test(chuoi)) {
+          const ses = createSession(chuoi);
+          rec.token = ses.token;
+          rec.logged = ses.logged;
+          rec.cookieCount = ses.cookieCount;
+          rec.status = 'done';
+          return;
+        }
+      }
+    }
+    rec.status = 'expired';
+  } finally {
+    await browser.close().catch(() => {});
+    const r = _logins.get(loginId);
+    if (r && r.status === 'waiting') r.status = 'expired';
+    setTimeout(() => _logins.delete(loginId), 60000);
+  }
+}
+
+function loginStatus(loginId) {
+  const r = _logins.get(String(loginId || ''));
+  if (!r) return { status: 'unknown' };
+  return { status: r.status, qr: r.qr, token: r.token, logged: r.logged, cookieCount: r.cookieCount, error: r.error };
+}
 function parseCookieString(s) {
   return String(s || '').split(/;\s*/).map((p) => {
     const i = p.indexOf('=');
@@ -290,7 +365,7 @@ function streamHeaders(extra = {}) {
   };
 }
 
-module.exports = { fetchFeed, streamHeaders, cleanUser, cleanTag, resolvePlayUrl, createSession, getSession, fetchDirect };
+module.exports = { fetchFeed, streamHeaders, cleanUser, cleanTag, resolvePlayUrl, createSession, getSession, fetchDirect, startLogin, loginStatus };
 
 // ─── Giải link phát qua tikwm (CDN TikTok chặn IP máy này → 403) ────────────
 // Cache theo id video 2 giờ (link tikwm sống vài giờ, đỡ gọi lại mỗi lần xem).

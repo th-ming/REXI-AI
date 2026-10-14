@@ -2471,6 +2471,20 @@ router.post('/tiktok/session', rateLimit({ windowMs: 60000, max: 30 }), async (r
   }
 });
 
+// Đăng nhập bằng QR: start → {loginId} (mở browser nền, chụp QR); FE hiện QR,
+// poll status mỗi 3s → done kèm {token} phiên nick thật.
+router.post('/tiktok/qr/start', rateLimit({ windowMs: 60000, max: 10 }), async (req, res) => {
+  try {
+    const data = await tiktokService.startLogin();
+    res.json({ success: true, ...data });
+  } catch (e) {
+    res.status(502).json({ success: false, error: (e.message || 'không mở được QR').toString().slice(0, 200) });
+  }
+});
+router.get('/tiktok/qr/status', rateLimit({ windowMs: 60000, max: 120 }), async (req, res) => {
+  res.json({ success: true, ...tiktokService.loginStatus(req.query.loginId) });
+});
+
 // AI nhìn frame → video có khớp chủ đề user muốn không? (vision route của modelRouter)
 router.post('/tiktok/classify', rateLimit({ windowMs: 60000, max: 60 }), async (req, res) => {
   const { image, topics, caption } = req.body || {};
