@@ -81,10 +81,11 @@ async function chayLogin(loginId) {
   const han = Date.now() + QR_TIMEOUT;
   try {
     const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 500, height: 760 }, locale: 'vi-VN' });
-    // Chặn media/font cho nhẹ (giữ ảnh/script vì mã QR có thể là thẻ img + cần script render)
+    // Chặn ảnh/media/font cho nhẹ (mã QR là khung canvas, không phải thẻ ảnh;
+    // nếu khung chụp ra quá bé thì chụp cả trang bù)
     await ctx.route('**/*', (route) => {
       const type = route.request().resourceType();
-      if (type === 'media' || type === 'font') return route.abort();
+      if (type === 'image' || type === 'media' || type === 'font') return route.abort();
       return route.continue();
     }).catch(() => {});
     const page = await ctx.newPage();
@@ -98,7 +99,7 @@ async function chayLogin(loginId) {
     await page.waitForTimeout(1200); // cho mã render nét
     // Chụp mã QR (ưu tiên đúng khung QR, rớt thì cả trang)
     let anh = await khungQr.screenshot().catch(() => null);
-    if (!anh) anh = await page.screenshot().catch(() => null);
+    if ((!anh || anh.length < 2000) && !page.isClosed()) anh = await page.screenshot().catch(() => null);
     if (!anh) throw new Error('Không chụp được mã QR');
     rec.qr = 'data:image/png;base64,' + anh.toString('base64');
     rec.status = 'waiting';
