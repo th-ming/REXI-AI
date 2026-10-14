@@ -89,20 +89,7 @@ async function layTrangQrNong() {
   _qrNong.maMoiLuc = Date.now();
   return _qrNong;
 }
-// Giữ mã luôn tươi: mỗi 45s tải mới mã nền (khi không ai đang đăng nhập),
-// để bấm là chụp ngay không chờ
-setInterval(async () => {
-  try {
-    for (const rec of _logins.values()) {
-      if (rec.status === 'waiting' || rec.status === 'starting') return;
-    }
-    if (!_qrNong || !_qrNong.page || _qrNong.page.isClosed()) return;
-    const { page } = _qrNong;
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    await page.getByText(/mã QR|QR Code/i).first().click({ timeout: 12000 }).catch(() => {});
-    _qrNong.maMoiLuc = Date.now();
-  } catch (e) { /* kệ, lần sau */ }
-}, 45000);
+// (Không tải nền liên tục — tốn RAM/CPU làm sập máy free; mã mới khi cần)
 // Hâm sẵn sau khi server lên 20s (chạy nền, không chặn boot)
 setTimeout(() => { layTrangQrNong().catch(() => { _qrNong = null; }); }, 20000);
 
