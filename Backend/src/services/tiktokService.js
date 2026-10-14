@@ -114,30 +114,48 @@ async function scrapeOnce(pageUrl, maxItems, u, h) {
       });
       const page = await ctx.newPage();
 
-      // Gom TẤT CẢ response item_list (lượt đầu hay trả body rỗng) + cuộn trang kích thêm request
+      // Gom TẤT CẢ response item_list (lượt đầu hay trả body rỗng).
+      // IP datacenter hay bị trả rỗng lúc đầu — chờ tới 60s, hết thì reload
+      // (lúc này đã có cookie challenge) rồi chờ tiếp 45s.
       const apiHits = [];
       page.on('response', (r) => {
         if (r.url().includes('/api/post/item_list') || r.url().includes('/api/challenge/item_list')) apiHits.push(r);
       });
+      const layItemDauTien = async () => {
+        for (const resp of apiHits) {
+          if (resp._daDoc) continue;
+          resp._daDoc = true;
+          const data = await resp.json().catch(() => null);
+          if (data && Array.isArray(data.itemList) && data.itemList.length) return data.itemList;
+        }
+        return null;
+      };
 
       await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
-      for (let i = 0; i < 8 && !apiHits.length; i++) await page.waitForTimeout(1500);
-      // Cuộn vài lần cho trang lazy-load thêm video
-      for (let i = 0; i < 3; i++) {
-        await page.evaluate(() => window.scrollBy(0, 1200)).catch(() => {});
-        await page.waitForTimeout(1500);
-      }
-
-      let items = null;
-      let author = u || '';
-      for (const resp of apiHits) {
-        const data = await resp.json().catch(() => null);
-        if (data && Array.isArray(data.itemList) && data.itemList.length) {
-          items = data.itemList;
-          const au = data.itemList[0] && data.itemList[0].author;
-          if (au && au.uniqueId) author = au.uniqueId;
-          break;
+      let items = await layItemDauTien();
+      const han = Date.now() + 60000;
+      let lanCuon = 0;
+      while (!items && Date.now() < han) {
+        await page.waitForTimeout(3000);
+        items = await layItemDauTien();
+        if (!items && Date.now() - lanCuon > 8000) {
+          lanCuon = Date.now();
+          await page.evaluate(() => window.scrollBy(0, 1200)).catch(() => {});
         }
+      }
+      if (!items) {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: FEED_TIMEOUT }).catch(() => {});
+        const han2 = Date.now() + 45000;
+        while (!items && Date.now() < han2) {
+          await page.waitForTimeout(3000);
+          items = await layItemDauTien();
+          if (!items) await page.evaluate(() => window.scrollBy(0, 1200)).catch(() => {});
+        }
+      }
+      let author = u || '';
+      if (items && items.length) {
+        const au = items[0] && items[0].author;
+        if (au && au.uniqueId) author = au.uniqueId;
       }
       if (!items) {
         // Fallback: đọc JSON SSR trong DOM
