@@ -1,3 +1,12 @@
+# ⛔ QUY TẮC GHIM CỨNG — LẬP KẾ HOẠCH TRƯỚC KHI LÀM (ÁP DỤNG 100%, MỌI SESSION)
+
+> **BẮT BUỘC TUYỆT ĐỐI, KHÔNG NGOẠI LỆ**: Trước khi THỰC THI bất kỳ yêu cầu nào của User — bất kể việc gì (sửa code, deploy, tạo file, chạy lệnh, research, fix bug, đổi config...), dù lớn hay nhỏ — Agent PHẢI gọi `todowrite` lập kế hoạch (danh sách todo từng bước) TRƯỚC, rồi mới được gọi tool khác để làm.
+> - Không todowrite trước = vi phạm quy trình, làm sai quy trình dù kết quả đúng cũng tính FAIL.
+> - Việc 1 bước nhỏ nhất cũng phải có todo (tối thiểu 1-2 item: "làm X" + "verify X").
+> - Trong lúc làm: cập nhật trạng thái todo (`in_progress` → `completed`) theo thời gian thực, không batch cuối.
+> - Nếu giữa chừng phát hiện việc mới → bổ sung vào todo list, không làm ngoài kế hoạch lặng lẽ.
+> - Quy tắc này ĐÈ LÊN mọi quy định khác về quy trình. Đọc file này là phải tuân thủ ngay từ message đầu tiên.
+
 # QUY ĐỊNH TỰ KIỂM TRA VÀ XÁC MINH BẰNG CHỨNG THỰC TẾ (STRICT SELF-VERIFICATION & PROOF RULE)
 
 # 🔑 TÀI KHOẢN & API KEY CÓ SẴN TRONG DATABASE (KHÔNG CẦN TẠO MỚI)

@@ -3113,7 +3113,12 @@ router.get('/video/status', authMiddleware, async (req, res) => {
       // QA 28/9: tạo video AI miễn phí qua HuggingFace Spaces (endpoint /generate-video),
       // độc lập với renderer composition (Playwright+ffmpeg) ở trên.
       aiVideo: true,
-      aiVideoProviders: ['huggingface-spaces: zeroscope-v2 (text→video)', 'huggingface-spaces: wan2.2-14b-i2v (ảnh→video)', 'storyboard: ghép N cảnh ~3s thành video dài (param scenes 1-6)'],
+      aiVideoProviders: [
+        'minimax-h3 (HF Inference API, 33B, text→video + image→video, cần HF_TOKEN)',
+        'huggingface-spaces: zeroscope-v2 (text→video)',
+        'huggingface-spaces: wan2.2-14b-i2v (ảnh→video)',
+        'storyboard: ghép N cảnh ~3s thành video dài (param scenes 1-6)'
+      ],
       ready: ffmpegOk && playwrightOk
     });
   } catch (err) {
@@ -3359,6 +3364,72 @@ router.post('/video/save', authMiddleware, (req, res) => {
 // {success:false} để nơi gọi tự xử lý. KHÔNG đụng renderer Playwright/ffmpeg.
 const HF_VIDEO_T2V = { host: 'https://hysts-zeroscope-v2.hf.space', fn: '/run' };
 const HF_VIDEO_I2V = { host: 'https://observantdistressed-wan2-2-i2v-v3.hf.space', fn: '/generate_video' };
+
+// ─── MiniMax H3 (Hugging Face Inference API) ───────────
+// Model: MiniMaxAI/MiniMax-H3 (33B, Image-Text-to-Video)
+// Yêu cầu: HF_TOKEN (env) có quyền inference. Free tier: ~30 req/hr.
+// Endpoint: https://api-inference.huggingface.co/models/MiniMaxAI/MiniMax-H3
+// Input: { inputs: "prompt", parameters: { num_frames: 24, fps: 8, ... } }
+// Returns: video bytes (MP4)
+async function generateVideoMiniMaxH3(prompt, imageUrl) {
+  const token = (process.env.HF_TOKEN || '').trim();
+  if (!token) return { success: false, error: 'Chưa cấu hình HF_TOKEN cho MiniMax-H3' };
+
+  try {
+    const payload = {
+      inputs: String(prompt || '').slice(0, 800),
+      parameters: {
+        num_frames: 24,
+        fps: 8,
+        guidance_scale: 7.5,
+        num_inference_steps: 25,
+      }
+    };
+    // Nếu có image_url → image-to-video (MiniMax-H3 hỗ trợ I2V)
+    if (imageUrl && imageUrl.trim()) {
+      payload.image = imageUrl.trim();
+    }
+
+    const r = await fetch('https://api-inference.huggingface.co/models/MiniMaxAI/MiniMax-H3', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(180000) // 3 phút
+    });
+
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      if (r.status === 503) {
+        // Model loading - retry once
+        await new Promise(res => setTimeout(res, 10000));
+        return generateVideoMiniMaxH3(prompt, imageUrl);
+      }
+      return { success: false, error: `MiniMax-H3 HTTP ${r.status}: ${String(t).slice(0, 200)}` };
+    }
+
+    const contentType = r.headers.get('content-type') || '';
+    if (!contentType.startsWith('video/')) {
+      const t = await r.text().catch(() => '');
+      return { success: false, error: `MiniMax-H3 không trả video: ${contentType} - ${String(t).slice(0, 200)}` };
+    }
+
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length) return { success: false, error: 'MiniMax-H3 trả video rỗng' };
+
+    // Verify MP4 magic bytes
+    const isMp4 = buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70;
+    if (!isMp4) {
+      // Try to detect if it's webm
+      const isWebm = buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
+      if (!isWebm) return { success: false, error: 'Dữ liệu MiniMax-H3 không phải video hợp lệ' };
+    }
+
+    return { success: true, video: `data:${contentType};base64,${buf.toString('base64')}`, mimeType: contentType, provider: 'minimax-h3', bytes: buf.length };
+  } catch (e) {
+    console.log('[generate-video] MiniMax-H3 error:', e.message);
+    return { success: false, error: e.message };
+  }
+}
 // Cloudflare trước một số Space chặn UA lạ → dùng UA trình duyệt cho chắc.
 const HF_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -3538,7 +3609,8 @@ function stitchClips(buffers) {
   });
 }
 
-// POST: tạo video AI miễn phí từ prompt (và tuỳ chọn ảnh nguồn) qua HuggingFace Spaces.
+// POST: tạo video AI miễn phí từ prompt (và tuỳ chọn ảnh nguồn).
+// Thứ tự ưu tiên: MiniMax-H3 (HF Inference API, cần HF_TOKEN) → HF Spaces (zeroscope/wan2.2).
 // Body: { prompt, image_url?, scenes? (1-6), prompts? ([cảnh 1, cảnh 2...]) }.
 // scenes > 1 (hoặc gửi mảng prompts) → storyboard mode: Groq chia truyện thành
 // các cảnh → sinh từng clip ~3s → ghép ffmpeg thành 1 video dài.
@@ -3552,8 +3624,29 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
     return res.json({ success: false, error: 'Vui lòng nhập mô tả video (hoặc ảnh nguồn).' });
   }
   const n = promptsArr && promptsArr.length > 1 ? Math.min(promptsArr.length, 6) : reqScenes;
+
+  // Helper: thử MiniMax-H3 trước, lỗi thì rơi về HF Spaces
+  async function tryGenerateVideo(p, img) {
+    const mm = await generateVideoMiniMaxH3(p, img);
+    if (mm.success) return mm;
+    console.log('[generate-video] MiniMax-H3 fail → fallback HF Spaces:', mm.error);
+    return generateVideoHF(p, img);
+  }
+
+  // Helper cho storyboard mode (buffer thô để stitch)
+  async function tryGenerateVideoBuffer(p) {
+    const mm = await generateVideoMiniMaxH3(p);
+    if (mm.success) {
+      // Convert base64 back to buffer for stitching
+      const base64 = mm.video.split(',')[1];
+      return { buf: Buffer.from(base64, 'base64'), mime: mm.mimeType, provider: mm.provider };
+    }
+    console.log('[generate-video] MiniMax-H3 buffer fail → fallback HF Spaces:', mm.error);
+    return generateVideoBufferHF(p);
+  }
+
   if (n <= 1 && !(promptsArr && promptsArr.length > 1)) {
-    const out = await generateVideoHF(prompt, image_url);
+    const out = await tryGenerateVideo(prompt, image_url);
     return res.json(out);
   }
   // ─── Storyboard: video dài ~3s x N cảnh ───
@@ -3562,7 +3655,7 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
   const errs = [];
   for (let i = 0; i < sceneList.length; i++) {
     try {
-      const r = await generateVideoBufferHF(sceneList[i]);
+      const r = await tryGenerateVideoBuffer(sceneList[i]);
       results.push(r);
     } catch (e) { errs.push(`cảnh ${i + 1}: ${String(e.message).slice(0, 120)}`); }
   }

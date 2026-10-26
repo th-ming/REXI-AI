@@ -458,8 +458,8 @@ async function fetchFeed({ user, tag, foryou, session, limit = 20 } = {}) {
   let lastErr = null;
   for (let attempt = 1; attempt <= 1; attempt++) {
     try {
-      // Chờ QR/login nhả browser trước (không 2 chromium cùng lúc → OOM sập app)
-      await choRanh(20000);
+      // Chờ QR/login nhả browser (xếp hàng chờ thay vì báo bận; heartbeat giữ kết nối)
+      await choRanh(180000);
       return await Promise.race([
         serialize(async () => { await dongQrNong(); return scrapeOnce(pageUrl, maxItems, u || '', h, cookieList, fy); }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Hết 90s chờ TikTok — thử bấm Tải lại')), 90000)),

@@ -59,3 +59,7 @@ services:
         value: bai
       - key: AGENT_MODEL
         value: qwen3.8-flash
+      # Hugging Face Token (MiniMax-H3, SD3, inference endpoints)
+      # Tạo tại: https://huggingface.co/settings/tokens → New token (Read/Inference)
+      - key: HF_TOKEN
+        sync: false
