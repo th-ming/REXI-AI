@@ -21,6 +21,7 @@ const socialRoutes = require('./src/routes/social.routes');
 const { rateLimitMiddleware } = require('./src/middleware/rateLimit.middleware');
 const { auditMiddleware } = require('./src/middleware/audit.middleware');
 const { handleTranscriptionConnection } = require('./src/routes/realtimeTranscription.routes');
+const nvidiaChat = require('./src/services/nvidiaChat');
 
 const { ensureAdmin, ensureGuestUser } = require('./src/ensure-admin');
 const { initDatabase } = require('./src/init-db');
@@ -267,6 +268,20 @@ const sessionSecret = resolveSessionSecret();
   };
   app.get('/privacy', legalPage('privacy'));
   app.get('/terms', legalPage('terms'));
+
+  // ─── NVIDIA chat (self-contained, public) ───
+  // Trang tĩnh + proxy giữ key ở backend (tránh CORS). Đăng ký TRƯỚC catch-all SPA.
+  const nchatDir = path.join(__dirname, 'nchat');
+  app.get('/nchat', (req, res) => res.sendFile(path.join(nchatDir, 'index.html')));
+  app.use('/nchat', express.static(nchatDir));
+  app.post('/nchat/api', async (req, res) => {
+    try {
+      res.json(await nvidiaChat.handle(req.body || {}));
+    } catch (e) {
+      res.status(500).json({ ok: false, tried: [String((e && e.message) || e)] });
+    }
+  });
+
   if (fs.existsSync(frontendBuildPath)) {
       app.use(express.static(frontendBuildPath));
       app.get('/{*path}', (req, res, next) => {

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NVIDIA Chat</title>
+<link rel="stylesheet" href="/nchat/style.css">
+</head>
+<body>
+<div id="bar">
+  <select id="model" title="Chọn model"></select>
+  <input id="q" placeholder="Nhập tin nhắn... (Enter để gửi, Ctrl+V dán ảnh, kéo ảnh vào)" autocomplete="off">
+  <button id="attach" type="button" title="Tải ảnh lên (chỉ model có 👁)">📎 Ảnh</button>
+  <button id="send" type="button">Gửi</button>
+</div>
+<div id="thumbs"></div>
+<div id="log"></div>
+<div id="status">Sẵn sàng · chế độ luân model tự động</div>
+<div id="drop">Thả ảnh vào đây</div>
+<script src="/nchat/app.js"></script>
+</body>
+</html>
