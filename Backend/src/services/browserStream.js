@@ -391,7 +391,8 @@ class BrowserStreamService {
       await this.page.waitForTimeout(600).catch(() => {});
       let title = ''; try { title = await this.page.title(); } catch { /* ignore */ }
       const after = await this._viewportText(2500).catch(() => '');
-      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after } };
+      const actionsUsed = actions.map(a => a.type + (a.selector ? (' ' + a.selector) : '') + (a.x != null ? (' (' + a.x + ',' + a.y + ')') : '')).join(' | ');
+      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after, actionsUsed } };
     } catch (e) {
       return { success: false, error: 'Lỗi AI Action: ' + e.message };
     }
@@ -422,7 +423,8 @@ class BrowserStreamService {
     try {
       return await this.page.evaluate((m) => {
         const vh = window.innerHeight, vw = window.innerWidth;
-        const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+        const root = document.querySelector('main') || document.querySelector('article') || document.body || document.documentElement;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         const parts = [];
         let n, total = 0;
         while ((n = walker.nextNode())) {
@@ -430,6 +432,7 @@ class BrowserStreamService {
           if (!t) continue;
           const el = n.parentElement;
           if (!el) continue;
+          if (el.closest('nav, aside, header, footer, [role="navigation"], [role="banner"], [role="menu"]')) continue;
           const st = window.getComputedStyle(el);
           if (st.display === 'none' || st.visibility === 'hidden') continue;
           const r = el.getBoundingClientRect();
