@@ -815,7 +815,7 @@ router.post('/conversations/:id/messages', rateLimit({ windowMs: 60000, max: 60 
             const { runInternalAgent } = require('../services/internalAgent');
             const result = await runInternalAgent(noi_dung, { model: model_name, provider });
             if (result && result.success && result.answer) {
-              return saveAIMessageAndRespond(id, result.answer + '\n\n> ⚙️ _Chạy bằng Agent nội bộ (engine ngoài không có trên server)._', res);
+              return saveAIMessageAndRespond(id, result.answer + '\n\n> _⚡ Agent Mode_', res);
             }
             return saveAIMessageAndRespond(id, '⚠️ Agent nội bộ chưa hoàn thành: ' + ((result && result.error) || 'không rõ lý do'), res);
           } catch (fbErr) {
@@ -1622,15 +1622,21 @@ router.post('/conversations/:id/messages/stream', rateLimit({ windowMs: 60000, m
       (async () => {
         try {
           const { runInternalAgent } = require('../services/internalAgent');
-          const result = await runInternalAgent(noi_dung, {});
+          // Truyền model/provider NGƯỜI DÙNG chọn (trước đây bỏ trống -> luôn dùng model mặc định yếu)
+          const result = await runInternalAgent(noi_dung, { model: model_name, provider });
           if (result && result.success && result.answer) {
-            sendSSE({ type: 'token', text: result.answer });
-            sendSSE({ type: 'done', ma_tin_nhan: crypto.randomUUID(), noi_dung: result.answer });
-          } else {
-            const steps = (result && result.steps) || [];
-            const detail = steps.map(s => `• ${s.tool}${s.args ? '(' + JSON.stringify(s.args).slice(0, 80) + ')' : ''}: ${String(s.result || '').slice(0, 140)}`).join('\n');
-            sendSSE({ type: 'error', message: `⛔ Agent chưa hoàn thành: ${(result && result.error) || 'không có câu trả lời'}\n${detail}` });
+            const maTinNhanAI = crypto.randomUUID();
+            // Lưu câu trả lời vào DB (trước đây bản stream không lưu -> reload là mất)
+            db.run("INSERT INTO tin_nhan (ma_tin_nhan, ma_hoi_thoai, vai_tro, noi_dung) VALUES (?, ?, 'assistant', ?)", [maTinNhanAI, id, result.answer], () => {
+              sendSSE({ type: 'token', text: result.answer });
+              sendSSE({ type: 'done', ma_tin_nhan: maTinNhanAI, noi_dung: result.answer });
+              endStream();
+            });
+            return;
           }
+          const steps = (result && result.steps) || [];
+          const detail = steps.map(s => `• ${s.tool}${s.args ? '(' + JSON.stringify(s.args).slice(0, 80) + ')' : ''}: ${String(s.result || '').slice(0, 140)}`).join('\n');
+          sendSSE({ type: 'error', message: `⛔ Agent chưa hoàn thành: ${(result && result.error) || 'không có câu trả lời'}\n${detail}` });
         } catch (e) {
           sendSSE({ type: 'error', message: '⛔ Agent lỗi: ' + e.message });
         }

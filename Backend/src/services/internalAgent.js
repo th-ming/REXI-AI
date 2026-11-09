@@ -7,9 +7,9 @@ const db = require('../config/db');
 const { decryptKey } = require('../utils/cryptoKeys');
 const { PROVIDER_ENDPOINTS } = require('../model-scanner.scheduler');
 
-const AGENT_PROVIDER = (process.env.AGENT_PROVIDER || 'unorouter').toLowerCase();
-const AGENT_MODEL = process.env.AGENT_MODEL || 'deepseek-v4-flash:free';
-const MAX_STEPS = parseInt(process.env.AGENT_MAX_STEPS || '6');
+const AGENT_PROVIDER = (process.env.AGENT_PROVIDER || 'groq').toLowerCase();
+const AGENT_MODEL = process.env.AGENT_MODEL || 'openai/gpt-oss-120b';
+const MAX_STEPS = parseInt(process.env.AGENT_MAX_STEPS || '10');
 const TOTAL_DEADLINE_MS = parseInt(process.env.AGENT_DEADLINE_MS || '120000'); // 2 phút: luôn trả lời trước khi proxy timeout
 const TOOL_TIMEOUT_MS = parseInt(process.env.AGENT_TOOL_TIMEOUT_MS || '40000'); // tool nặng (browser) fail nhanh
 
@@ -21,6 +21,7 @@ async function getFallbackChain(excludeProvider, excludeModel) {
     return chain.filter(f => !(f.provider === excludeProvider && f.model === excludeModel));
   } catch {
     return [
+      { provider: 'groq', model: 'openai/gpt-oss-120b' },
       { provider: 'unorouter', model: 'deepseek-v4.1-flash:free' },
       { provider: 'xkiro', model: 'mistralai/mistral-small-2603' },
       { provider: 'kiosapi', model: 'sensenova-6.8-flash' },
@@ -77,7 +78,12 @@ MỖI BƯỚC bạn CHỈ ĐƯỢC trả về ĐÚNG một JSON object (không m
 2) Đã xong, trả lời người dùng:
 {"thought":"<ngắn gọn>","answer":"<câu trả lời cuối, tiếng Việt>"}
 
-Quy tắc: dùng tool khi thực sự cần; kiểm tra kết quả (OBSERVATION) trước khi bước tiếp; tối đa ${MAX_STEPS} bước; thất bại 2 lần liên tiếp cùng tool → đổi cách khác hoặc answer nêu rõ lỗi; tuyệt đối không bịa kết quả tool.
+QUY TẮC (bắt buộc):
+- Tối đa ${MAX_STEPS} bước. Bước ${MAX_STEPS} (cuối cùng) BẮT BUỘC trả "answer", không được gọi tool.
+- Đã đủ thông tin để trả lời (vd search_web hoặc browser_navigate vừa trả kết quả) → trả "answer" NGAY, KHÔNG gọi thêm tool. Đừng lan man.
+- KHÔNG gọi lại cùng một tool với cùng tham số. Kiểm tra kết quả (OBSERVATION) trước khi bước tiếp.
+- Tool lỗi hoặc rỗng 1 lần → thử cách khác; vẫn lỗi → trả "answer" nêu rõ lỗi.
+- Tuyệt đối không bịa kết quả tool.
 ĐỌC NỘI DUNG WEB: browser_navigate đã TRẢ LUÔN tiêu đề + text trang → dùng nó để tóm tắt/trả lời ngay, KHÔNG cần thêm bước; nếu cần đọc lại dùng browser_read. KHÔNG dùng browser_screenshot (bạn không đọc được ảnh). Nếu cần thông tin mới → search_web; đọc 1 URL bất kỳ → web_analyze.`;
 }
 
@@ -102,7 +108,7 @@ async function callModel(baseUrl, key, model, messages) {
   const res = await fetch(baseUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 1200 }),
+    body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 2000 }),
     signal: AbortSignal.timeout(90000),
   });
   const text = await res.text();
@@ -151,11 +157,27 @@ async function runAgentLoop(prompt, provider, model, onEvent, allowedTools) {
   const messages = [{ role: 'system', content: buildSystemPrompt(allowedTools) }, { role: 'user', content: String(prompt) }];
   const steps = [];
   const deadline = Date.now() + TOTAL_DEADLINE_MS;
+  let lastSig = '';
+  let repeat = 0;
   for (let step = 0; step < MAX_STEPS; step++) {
-    if (Date.now() > deadline) throw new Error('Agent hết thời gian (4 phút)');
+    if (Date.now() > deadline) break; // hết giờ -> tổng hợp trả lời, không ném lỗi
+    const lastStep = step === MAX_STEPS - 1;
+    // Bước cuối: ép model trả lời, cấm gọi thêm tool (đảm bảo luôn có đáp án)
+    if (lastStep) {
+      messages.push({ role: 'user', content: 'ĐÂY LÀ BƯỚC CUỐI. Bắt buộc trả ĐÚNG JSON {"thought":"...","answer":"..."} — KHÔNG gọi thêm tool. Dùng mọi thông tin đã có.' });
+    }
     const raw = await callModel(baseUrl, key, model, messages);
     const act = extractJson(raw);
     if (onEvent) onEvent({ step, raw: raw.slice(0, 400) });
+    if (lastStep) {
+      // Ép lấy đáp án: ưu tiên answer; nếu model vẫn không trả JSON thì dùng text thô làm câu trả lời
+      const ans = (act && act.answer) ? String(act.answer) : String(raw).trim();
+      if (ans) {
+        steps.push({ step: step + 1, thought: (act && act.thought) || '', answer: ans.slice(0, 20000) });
+        return { success: true, provider, model, steps, answer: ans, rounds: step + 1, forced: true };
+      }
+      break;
+    }
     if (!act || typeof act !== 'object') {
       messages.push({ role: 'assistant', content: raw });
       messages.push({ role: 'user', content: 'OBSERVATION: phản hồi không phải JSON hợp lệ. Trả lời ĐÚNG 1 object JSON như hướng dẫn.' });
@@ -166,9 +188,13 @@ async function runAgentLoop(prompt, provider, model, onEvent, allowedTools) {
       return { success: true, provider, model, steps, answer: String(act.answer), rounds: step + 1 };
     }
     if (act.tool) {
+      const sig = act.tool + '|' + JSON.stringify(act.args || {});
+      if (sig === lastSig) repeat++; else { repeat = 0; lastSig = sig; }
       let toolResult;
       if (allowedTools && allowedTools.length && !allowedTools.includes(act.tool)) {
         toolResult = { error: 'Tool "' + act.tool + '" không được phép trong ngữ cảnh này. Chỉ dùng: ' + allowedTools.join(', ') };
+      } else if (repeat >= 2) {
+        toolResult = { error: 'Bạn đã gọi lại y hệt ' + act.tool + ' nhiều lần. ĐỔI cách khác hoặc trả "answer" với thông tin đã có.' };
       } else {
         try {
           toolResult = await Promise.race([
@@ -183,8 +209,21 @@ async function runAgentLoop(prompt, provider, model, onEvent, allowedTools) {
       messages.push({ role: 'user', content: `OBSERVATION (${act.tool}): ${slim}` });
       continue;
     }
-    return { success: false, error: 'Model trả JSON không hợp lệ (thiếu answer/tool)', steps };
+    // JSON hợp lệ nhưng thiếu cả answer lẫn tool -> nhắc định dạng rồi tiếp
+    messages.push({ role: 'assistant', content: raw });
+    messages.push({ role: 'user', content: 'OBSERVATION: JSON thiếu "answer" hoặc "tool". Trả lại ĐÚNG định dạng.' });
   }
+  // Hết bước/hết giờ mà chưa có answer: gọi 1 lần tổng hợp để LUÔN trả về câu trả lời thay vì báo lỗi trần bước
+  try {
+    messages.push({ role: 'user', content: 'Hết ngân sách bước. Trả lời NGƯỜI DÙNG NGAY bằng tiếng Việt, tóm tắt mọi thông tin đã có ở trên, KHÔNG gọi thêm tool.' });
+    const finalRaw = await callModel(baseUrl, key, model, messages);
+    const fin = extractJson(finalRaw);
+    const ans = (fin && fin.answer) ? String(fin.answer) : String(finalRaw).trim();
+    if (ans) {
+      steps.push({ step: steps.length + 1, answer: ans.slice(0, 20000) });
+      return { success: true, provider, model, steps, answer: ans, rounds: steps.length, forced: true };
+    }
+  } catch { /* ignore, rơi xuống fallback dưới */ }
   return { success: false, error: `Đạt trần ${MAX_STEPS} bước mà chưa có câu trả lời`, steps };
 }
 

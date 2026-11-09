@@ -597,6 +597,7 @@ async function getAgentChain() {
       }
     }
   } catch (e) { console.warn('[Agent] doc agent_chain fail:', e.message); }
+  push('groq', 'openai/gpt-oss-120b');        // model agent mạnh (ReAct JSON ổn) — ưu tiên đầu chuỗi
   push('unorouter', 'deepseek-v4-flash:free');
   push('xkiro', 'mistralai/mistral-small-2603');
   push('kiosapi', 'sensenova-6.8-flash');
