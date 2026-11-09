@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 // Rexi AI OS - Master Web Suite (Auto-Synced & Reloaded)
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import {
   PanelLeftOpen,
   X,
@@ -55,31 +55,32 @@ import {
 } from 'lucide-react';
 import { getLang, setLang, t } from './i18n';
 import { tx } from './i18n-sweep';
-import Hls from 'hls.js';
+let _hlsPromise = null;
+const loadHls = () => (_hlsPromise ||= import('hls.js').then((m) => m.default));
 
 // Components
 import { API_BASE, apiFetch } from './config';
 import Sidebar from './components/Sidebar';
 import ChatTab from './components/ChatTab';
-import CodeEditorTab from './components/CodeEditorTab';
-import IPTVTab from './components/IPTVTab';
-import SettingsModal from './components/SettingsModal';
-import SkillsModal from './components/SkillsModal';
-import AdminPanel from './AdminPanel';
-import StudioTab from './components/StudioTab';
-import VideoCreatorTab from './components/VideoCreatorTab';
-import OpenCutTab from './components/OpenCutTab';
-import VideoEditTab from './components/VideoEditTab';
-import OpenShortsTab from './components/OpenShortsTab';
-import TikTokFeedTab from './components/TikTokFeedTab';
-import ImageGenTab from './components/ImageGenTab';
-import DocumentsTab from './components/DocumentsTab';
-import YouTubeTab from './components/YouTubeTab';
-import GameTab from './components/GameTab';
-import ClassroomTab from './components/ClassroomTab';
-import BrowserView from './components/BrowserView';
-import HelpModal from './components/HelpModal';
-import ScrapePanel from './components/ScrapePanel';
+const CodeEditorTab = lazy(() => import('./components/CodeEditorTab'));
+const IPTVTab = lazy(() => import('./components/IPTVTab'));
+const SettingsModal = lazy(() => import('./components/SettingsModal'));
+const SkillsModal = lazy(() => import('./components/SkillsModal'));
+const AdminPanel = lazy(() => import('./AdminPanel'));
+const StudioTab = lazy(() => import('./components/StudioTab'));
+const VideoCreatorTab = lazy(() => import('./components/VideoCreatorTab'));
+const OpenCutTab = lazy(() => import('./components/OpenCutTab'));
+const VideoEditTab = lazy(() => import('./components/VideoEditTab'));
+const OpenShortsTab = lazy(() => import('./components/OpenShortsTab'));
+const TikTokFeedTab = lazy(() => import('./components/TikTokFeedTab'));
+const ImageGenTab = lazy(() => import('./components/ImageGenTab'));
+const DocumentsTab = lazy(() => import('./components/DocumentsTab'));
+const YouTubeTab = lazy(() => import('./components/YouTubeTab'));
+const GameTab = lazy(() => import('./components/GameTab'));
+const ClassroomTab = lazy(() => import('./components/ClassroomTab'));
+const BrowserView = lazy(() => import('./components/BrowserView'));
+const HelpModal = lazy(() => import('./components/HelpModal'));
+const ScrapePanel = lazy(() => import('./components/ScrapePanel'));
 
 
 // (marked/highlight render markdown nằm trong Frontend/src/utils/sanitize.js — ChatTab dùng sanitizeMarkdown)
@@ -310,8 +311,13 @@ const FabItem = ({ item, activeTab, onPick }) => (
   </button>
 );
 
+const TabLoading = () => (
+  <div className="flex items-center justify-center h-full w-full gap-2 text-slate-500 text-xs">
+    <span className="w-4 h-4 rounded-full border-2 border-slate-600 border-t-cyan-400 animate-spin" />
+  </div>
+);
 
-
+const KEEPALIVE_TABS = new Set(['iptv', 'youtube', 'tiktokfeed']);
 
 const AI_SPECIALTIES = [
   { id: 'general', key: 'spGeneral' },
@@ -352,6 +358,11 @@ export default function App() {
   const [forgotMessage, setForgotMessage] = useState('');
   const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('rexi_activeTab') || 'chat'); // 'chat' | 'code' | 'files' | 'iptv' | 'desktop'
   const handleSetActiveTab = (tab) => { setActiveTab(tab); localStorage.setItem('rexi_activeTab', tab); };
+  const [openedTabs, setOpenedTabs] = useState(() => new Set(KEEPALIVE_TABS.has(activeTab) ? [activeTab] : []));
+  useEffect(() => {
+    if (!KEEPALIVE_TABS.has(activeTab)) return;
+    setOpenedTabs((prev) => (prev.has(activeTab) ? prev : new Set(prev).add(activeTab)));
+  }, [activeTab]);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIds, setSearchIds] = useState(null); // Set id hội thoại khớp NỘI DUNG tin nhắn (full-text)
@@ -952,7 +963,7 @@ useEffect(() => {
       } catch { /* ignore */ }
     });
   }, []);
-  const playHlsStream = useCallback((url) => {
+  const playHlsStream = useCallback(async (url) => {
     const video = iptvVideoRef.current;
     if (!video) return;
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
@@ -981,6 +992,8 @@ useEffect(() => {
     const streamUrl = `${API_BASE}/services/iptv/proxy?url=${encodeURIComponent(url)}${_proxyToken ? `&token=${encodeURIComponent(_proxyToken)}` : ''}`;
     let fallbackTried = false;
     const failChannel = () => setIptvError(t(lang, 'Kênh này hiện không phát được — thử kênh khác.'));
+    let Hls;
+    try { Hls = await loadHls(); } catch { failChannel(); return; }
     const attachFallback = () => {
       // Fallback: proxy lỗi → thử phát trực tiếp URL gốc (giữ kênh chạy như trước)
       fallbackTried = true;
@@ -1931,6 +1944,7 @@ useEffect(() => {
         {/* Tab Router Content */}
         <div className="flex-1 overflow-hidden relative">
           
+          <Suspense fallback={<TabLoading />}>
           {/* TAB 1: AI CHAT WORKSPACE */}
           {activeTab === 'chat' && (
             <ChatTab
@@ -1966,6 +1980,7 @@ useEffect(() => {
           )}
 
           {/* TAB 4: IPTV LIVE TV — giữ mount (display:none khi ẩn) để phát nền khi chuyển tab */}
+          {(activeTab === 'iptv' || openedTabs.has('iptv')) && (
           <div className={activeTab === 'iptv' ? 'contents' : 'hidden'}>
             <IPTVTab
               iptvTab={iptvTab} setIptvTab={setIptvTab}
@@ -1981,6 +1996,7 @@ useEffect(() => {
               hlsRef={hlsRef}
             />
           </div>
+          )}
 
           {/* TAB 5a: TTS STUDIO */}
           {activeTab === 'tts' && (
@@ -2044,6 +2060,7 @@ useEffect(() => {
           )}
 
           {/* TAB 5d: YOUTUBE FREE (không quảng cáo) — giữ mount để phát nền khi chuyển tab */}
+          {(activeTab === 'youtube' || openedTabs.has('youtube')) && (
           <div className={activeTab === 'youtube' ? 'contents' : 'hidden'}>
             <YouTubeTab
               authToken={authToken}
@@ -2051,8 +2068,10 @@ useEffect(() => {
               active={activeTab === 'youtube'}
             />
           </div>
+          )}
 
           {/* TAB 5d-2: TIKTOK FEED (xem dọc + lọc chủ đề AI tự lướt) */}
+          {(activeTab === 'tiktokfeed' || openedTabs.has('tiktokfeed')) && (
           <div className={activeTab === 'tiktokfeed' ? 'contents' : 'hidden'}>
             <TikTokFeedTab
               authToken={authToken}
@@ -2060,6 +2079,7 @@ useEffect(() => {
               active={activeTab === 'tiktokfeed'}
             />
           </div>
+          )}
 
           {/* TAB 5e: GAME ZONE (HTML5 games) */}
           {activeTab === 'games' && (
@@ -2135,14 +2155,15 @@ useEffect(() => {
             <AdminPanel token={authToken} currentUser={currentUser} onClose={() => setActiveTab('chat')} />
           )}
 
+          </Suspense>
         </div>
       </main>
 
       {/* ═══════════════════ SKILLS MODAL (DATABASE SKILLS) ═══════════════════ */}
-      <SkillsModal skillsOpen={skillsOpen} setSkillsOpen={setSkillsOpen} dbSkills={dbSkills} />
+      <Suspense fallback={null}><SkillsModal skillsOpen={skillsOpen} setSkillsOpen={setSkillsOpen} dbSkills={dbSkills} /></Suspense>
 
       {/* ═══════════════════ SCRAPE PANEL (DATA SCRAPER KIT) ═══════════════════ */}
-      <ScrapePanel open={scrapeOpen} onClose={() => setScrapeOpen(false)} token={authToken} />
+      <Suspense fallback={null}><ScrapePanel open={scrapeOpen} onClose={() => setScrapeOpen(false)} token={authToken} /></Suspense>
 
       {/* Super Tools Modal (Exec, Git, Memory) */}
       {superToolsOpen && (
@@ -2417,14 +2438,14 @@ useEffect(() => {
 
 
       {/* ═══════════════════ SETTINGS MODAL ═══════════════════ */}
-      <SettingsModal
+      <Suspense fallback={null}><SettingsModal
         settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen}
         provider={provider} setProvider={setProvider}
         modelName={modelName} setModelName={setModelName}
         apiKey={apiKey} setApiKey={setApiKey}
         baseUrl={baseUrl} setBaseUrl={setBaseUrl}
         showToast={showToast}
-      />
+      /></Suspense>
 
       {/* ═══════════════════ FLOATING SPEED DIAL MENU (Hiển thị ở mọi tab, kể cả Admin) ═══════════════════ */}
           {(
@@ -2567,7 +2588,7 @@ useEffect(() => {
       )}
 
       {/* ═══════════════════ HELP MODAL (HƯỚNG DẪN SỬ DỤNG) ═══════════════════ */}
-      <HelpModal helpOpen={helpOpen} setHelpOpen={setHelpOpen} />
+      <Suspense fallback={null}><HelpModal helpOpen={helpOpen} setHelpOpen={setHelpOpen} /></Suspense>
 
       {/* Toast Notification */}
       {toastMsg && (
