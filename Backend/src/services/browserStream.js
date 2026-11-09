@@ -293,12 +293,14 @@ class BrowserStreamService {
           items: {
             type: 'object',
             properties: {
-              type: { type: 'string', description: 'click | type | press | scroll | goto | wait | done' },
+              type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | done' },
               selector: { type: 'string', description: 'CSS selector hoặc text=... (chỉ cho click/type)' },
               text: { type: 'string', description: 'nội dung cần gõ (chỉ cho type)' },
               key: { type: 'string', description: 'phím như Enter/Backspace (chỉ cho press)' },
               direction: { type: 'string', description: 'up/down/left/right (chỉ cho scroll)' },
               url: { type: 'string', description: 'URL cần mở (chỉ cho goto)' },
+              x: { type: 'number', description: 'toạ độ X (chỉ cho clickAt)' },
+              y: { type: 'number', description: 'toạ độ Y (chỉ cho clickAt)' },
               description: { type: 'string' }
             },
             required: ['type']
@@ -308,16 +310,28 @@ class BrowserStreamService {
       required: ['actions']
     };
 
+    const elements = await this._interactiveMap().catch(() => []);
+    const elList = elements.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''} @(${e.x},${e.y})`).join('\n');
+    const vp = await this._viewportText(2500).catch(() => '');
+
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
         body: JSON.stringify({
-          model: 'openai/gpt-oss-20b',
+          model: 'openai/gpt-oss-120b',
           messages: [
             {
               role: 'system',
-              content: 'Bạn là trợ lý điều khiển trình duyệt. Dịch chỉ dẫn của người dùng thành danh sách hành động JSON để thực hiện trên trang hiện tại. Ưu tiên dùng text=... hoặc CSS selector chính xác. Nếu chỉ dẫn là câu chào hoặc không cần thao tác, trả về actions rỗng. Trang hiện tại: ' + (this.page?.url() || 'chưa mở')
+              content: 'Bạn là trợ lý điều khiển trình duyệt (Playwright). Dịch chỉ dẫn thành danh sách hành động JSON thực hiện trên TRANG HIỆN TẠI.\n' +
+                'URL: ' + (this.page?.url() || 'chưa mở') + '\n' +
+                'PHẦN TỬ TƯƠNG TÁC ĐANG HIỂN THỊ (chọn đúng từ đây):\n' + (elList || '(không thấy phần tử nào)') + '\n' +
+                'NỘI DUNG ĐANG NHÌN THẤY:\n' + (vp ? vp.slice(0, 1200) : '(trống)') + '\n\n' +
+                'QUY TẮC CHỌN:\n' +
+                '- click: ưu tiên selector "text=<đúng nhãn nhìn thấy>" (vd text=Next) hoặc "#id" hoặc "[name=...]" LẤY TỪ DANH SÁCH TRÊN.\n' +
+                '- Phần tử là canvas/không có nhãn (vd phím đàn, nút vẽ bằng hình) → dùng {"type":"clickAt","x":..,"y":..} theo toạ độ trong danh sách.\n' +
+                '- type: cần selector ô nhập (từ danh sách). press: phím (vd Enter). scroll: direction up/down. goto: url.\n' +
+                '- Chỉ trả về 1 hành động nếu đủ. Không cần thao tác → actions rỗng.'
             },
             { role: 'user', content: instruction }
           ],
@@ -341,13 +355,20 @@ class BrowserStreamService {
           switch (a.type) {
             case 'click':
               if (a.selector) await this.page.locator(a.selector).first().click({ timeout: 10000 });
+              await this.page.waitForTimeout(600);
+              break;
+            case 'clickAt':
+              if (typeof a.x === 'number' && typeof a.y === 'number') await this.page.mouse.click(a.x, a.y);
+              await this.page.waitForTimeout(600);
               break;
             case 'type':
               if (a.selector) await this.page.locator(a.selector).first().fill(a.text || '', { timeout: 10000 });
               else await this.page.keyboard.type(a.text || '');
+              await this.page.waitForTimeout(400);
               break;
             case 'press':
               await this.page.keyboard.press(a.key || 'Enter');
+              await this.page.waitForTimeout(800);
               break;
             case 'scroll':
               await this.page.mouse.wheel(0, a.direction === 'up' ? -600 : 600);
@@ -365,7 +386,10 @@ class BrowserStreamService {
           console.log('[BrowserAction] Bỏ qua action lỗi:', a.type, e.message);
         }
       }
-      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}` } };
+      await this.page.waitForTimeout(500).catch(() => {});
+      let title = ''; try { title = await this.page.title(); } catch { /* ignore */ }
+      const after = await this._viewportText(2500).catch(() => '');
+      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after } };
     } catch (e) {
       return { success: false, error: 'Lỗi AI Action: ' + e.message };
     }
@@ -390,7 +414,68 @@ class BrowserStreamService {
     return { success: true, url: this.page.url(), title, text };
   }
 
+  // Text ĐANG NHÌN THẤY trong khung nhìn hiện tại (theo vị trí cuộn) — để agent đọc đúng phần đang xem.
+  async _viewportText(maxChars = 3000) {
+    if (!this.page) return '';
+    try {
+      return await this.page.evaluate((m) => {
+        const vh = window.innerHeight, vw = window.innerWidth;
+        const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+        const parts = [];
+        let n, total = 0;
+        while ((n = walker.nextNode())) {
+          const t = n.nodeValue && n.nodeValue.trim();
+          if (!t) continue;
+          const el = n.parentElement;
+          if (!el) continue;
+          const st = window.getComputedStyle(el);
+          if (st.display === 'none' || st.visibility === 'hidden') continue;
+          const r = el.getBoundingClientRect();
+          if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue;
+          parts.push(t);
+          total += t.length + 1;
+          if (total > m) break;
+        }
+        return parts.join('\n').slice(0, m);
+      }, maxChars);
+    } catch { return ''; }
+  }
+
+  // Danh sách phần tử TƯƠNG TÁC đang hiển thị (nhãn + toạ độ) — cấp cho LLM của act() để chọn đúng selector.
+  async _interactiveMap(max = 60) {
+    if (!this.page) return [];
+    try {
+      return await this.page.evaluate((max) => {
+        const sel = 'a,button,input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="tab"],[onclick]';
+        const vh = window.innerHeight, vw = window.innerWidth;
+        const out = [];
+        for (const el of Array.from(document.querySelectorAll(sel))) {
+          const st = window.getComputedStyle(el);
+          if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) continue;
+          if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+          let label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.value ||
+            el.innerText || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\s+/g, ' ');
+          if (label.length > 60) label = label.slice(0, 60);
+          out.push({
+            tag: el.tagName.toLowerCase(),
+            role: el.getAttribute('role') || '',
+            text: label,
+            id: el.id || '',
+            name: el.getAttribute('name') || '',
+            x: Math.round(r.left + r.width / 2),
+            y: Math.round(r.top + r.height / 2),
+          });
+          if (out.length >= max) break;
+        }
+        return out;
+      }, max);
+    } catch { return []; }
+  }
+
   // Đọc lại nội dung trang hiện tại dưới dạng text (cho agent).
+  // Kèm viewportText = phần đang nhìn thấy + vị trí cuộn — để agent đọc đúng sau khi cuộn/bấm.
   async readText(maxChars = 6000) {
     if (!this.page) return { success: false, error: 'Chưa mở trang nào.' };
     try {
@@ -398,7 +483,13 @@ class BrowserStreamService {
       const text = await this.page.evaluate((m) =>
         String((document.body && document.body.innerText) || '')
           .replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim().slice(0, m), maxChars);
-      return { success: true, url: this.page.url(), title, text };
+      let scrollY = 0, scrollHeight = 0;
+      try {
+        const pos = await this.page.evaluate(() => ({ y: Math.round(window.scrollY), h: document.documentElement.scrollHeight, vh: window.innerHeight }));
+        scrollY = pos.y; scrollHeight = pos.h;
+      } catch { /* ignore */ }
+      const viewportText = await this._viewportText(3000);
+      return { success: true, url: this.page.url(), title, text, viewportText, scrollY, scrollHeight };
     } catch (e) { return { success: false, error: e.message }; }
   }
 

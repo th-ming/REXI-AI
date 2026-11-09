@@ -84,7 +84,8 @@ QUY TẮC (bắt buộc):
 - KHÔNG gọi lại cùng một tool với cùng tham số. Kiểm tra kết quả (OBSERVATION) trước khi bước tiếp.
 - Tool lỗi hoặc rỗng 1 lần → thử cách khác; vẫn lỗi → trả "answer" nêu rõ lỗi.
 - Tuyệt đối không bịa kết quả tool.
-ĐỌC NỘI DUNG WEB: browser_navigate đã TRẢ LUÔN tiêu đề + text trang → dùng nó để tóm tắt/trả lời ngay, KHÔNG cần thêm bước; nếu cần đọc lại dùng browser_read. KHÔNG dùng browser_screenshot (bạn không đọc được ảnh). Nếu cần thông tin mới → search_web; đọc 1 URL bất kỳ → web_analyze.`;
+ĐỌC NỘI DUNG WEB: browser_navigate TRẢ LUÔN tiêu đề + text trang → tóm tắt/trả lời ngay. Đọc lại → browser_read (trả thêm "viewportText" = phần đang nhìn thấy + scrollY).
+ĐIỀU KHIỂN WEB: bấm nút / chọn đáp án / điền form / mở link → browser_act với mô tả tiếng Việt (vd "bấm nút Next", "chọn đáp án B, chọn ô thứ 2"). browser_act TRẢ VỀ LUÔN nội dung trang sau hành động — đọc field "text" để xác nhận rồi mới trả lời, KHÔNG đoán. Cuộn thuần → browser_scroll(deltaY). KHÔNG dùng browser_screenshot (bạn không đọc được ảnh). Thông tin mới → search_web; đọc 1 URL bất kỳ → web_analyze.`;
 }
 
 function extractJson(text) {

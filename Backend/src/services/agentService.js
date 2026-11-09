@@ -27,8 +27,13 @@ const TOOL_REGISTRY = [
   },
   {
     name: 'browser_act',
-    description: 'Dùng AI thực hiện hành động phức tạp trên web (click nút, điền form, đọc nội dung...)',
-    parameters: { type: 'object', properties: { instruction: { type: 'string', description: 'Mô tả hành động cần làm' } }, required: ['instruction'] }
+    description: 'Dùng AI thực hiện hành động trên web: bấm nút, chọn đáp án, điền form, cuộn, mở link. AI đã được cấp sẵn nội dung + danh sách nút/ô đang hiển thị nên chọn đúng. TRẢ VỀ LUÔN nội dung trang sau hành động (đọc field "text"/"viewportText" để biết kết quả).',
+    parameters: { type: 'object', properties: { instruction: { type: 'string', description: 'Mô tả hành động, vd: "bấm nút Next", "chọn đáp án B", "cuộn xuống"' } }, required: ['instruction'] }
+  },
+  {
+    name: 'browser_scroll',
+    description: 'Cuộn trang theo pixel (deltaY âm = lên, dương = xuống). Dùng để tới phần dưới/trên trang rồi đọc bằng browser_read.',
+    parameters: { type: 'object', properties: { deltaY: { type: 'number', description: 'Số pixel cuộn dọc (vd 800). Âm = lên, dương = xuống' } }, required: ['deltaY'] }
   },
   {
     name: 'browser_screenshot',
@@ -37,7 +42,7 @@ const TOOL_REGISTRY = [
   },
   {
     name: 'browser_read',
-    description: 'Đọc nội dung TEXT (tiêu đề + chữ) của trang đang mở. DÙNG NGAY SAU browser_navigate để lấy nội dung trang rồi tóm tắt/trả lời (tốt hơn browser_screenshot với model chỉ đọc chữ).',
+    description: 'Đọc nội dung TEXT của trang đang mở. Trả kèm "viewportText" = phần ĐANG NHÌN THẤY (theo vị trí cuộn) + scrollY. Dùng sau browser_navigate để tóm tắt, hoặc sau khi cuộn/bấm để biết trang đã đổi thế nào.',
     parameters: { type: 'object', properties: { maxChars: { type: 'number', description: 'Số ký tự tối đa (mặc định 6000)' } } }
   },
   {
@@ -156,6 +161,9 @@ async function executeTool(toolName, args) {
     case 'browser_act':
       if (!browserStream.browser) await browserStream.launch();
       return await browserStream.act(args.instruction);
+    case 'browser_scroll':
+      if (!browserStream.browser) await browserStream.launch();
+      return await browserStream.scroll(0, args.deltaY || 800);
     case 'browser_screenshot':
       if (!browserStream.page) return { error: 'Browser chưa mở' };
       const buf = await browserStream.page.screenshot({ type: 'jpeg', quality: 70 });
