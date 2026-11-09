@@ -386,7 +386,9 @@ class BrowserStreamService {
           console.log('[BrowserAction] Bỏ qua action lỗi:', a.type, e.message);
         }
       }
-      await this.page.waitForTimeout(500).catch(() => {});
+      // Sau hành động có thể đã điều hướng trang → chờ load xong rồi mới đọc tiêu đề/nội dung
+      await this.page.waitForLoadState('domcontentloaded', { timeout: 6000 }).catch(() => {});
+      await this.page.waitForTimeout(600).catch(() => {});
       let title = ''; try { title = await this.page.title(); } catch { /* ignore */ }
       const after = await this._viewportText(2500).catch(() => '');
       return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after } };
@@ -532,18 +534,18 @@ class BrowserStreamService {
     // 2b) Cuộn tới đầu/cuối trang bằng heuristic (không cần LLM) — trả về nội dung tại vị trí đó
     if (/(cuối trang|dưới cùng|xuống hết|bottom|kéo xuống cuối)/i.test(trimmed)) {
       try {
-        await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-        await this.page.waitForTimeout(500);
+        await this.page.evaluate(() => { const el = document.scrollingElement || document.documentElement; el.scrollTop = el.scrollHeight; window.scrollTo(0, el.scrollHeight); });
+        await this.page.waitForTimeout(700);
         const t = await this.readText(4000);
-        return { success: true, result: { message: 'Đã cuộn xuống cuối trang.', url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText } };
+        return { success: true, result: { message: `Đã cuộn xuống cuối trang (scrollY=${t.scrollY}/${t.scrollHeight}).`, url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText, scrollY: t.scrollY } };
       } catch (e) { /* ignore, xử lý chung bên dưới */ }
     }
     if (/(đầu trang|trên cùng|lên đầu|top|kéo lên đầu)/i.test(trimmed)) {
       try {
-        await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(400);
+        await this.page.evaluate(() => { const el = document.scrollingElement || document.documentElement; el.scrollTop = 0; window.scrollTo(0, 0); });
+        await this.page.waitForTimeout(500);
         const t = await this.readText(4000);
-        return { success: true, result: { message: 'Đã cuộn lên đầu trang.', url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText } };
+        return { success: true, result: { message: `Đã cuộn lên đầu trang (scrollY=${t.scrollY}).`, url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText, scrollY: t.scrollY } };
       } catch (e) { /* ignore */ }
     }
 
