@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>REXI-AI · Bản đồ kiến trúc (tự sinh)</title>
+<style>
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#0b0e14; color:#e6edf3;
+    font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; overflow:hidden; }
+  #top { position:fixed; inset:0 0 auto 0; height:54px; display:flex; align-items:center; gap:10px;
+    padding:0 14px; background:rgba(13,17,23,.92); border-bottom:1px solid #21262d; z-index:20; flex-wrap:wrap; }
+  #top h1 { font-size:14px; margin:0 8px 0 0; color:#58a6ff; white-space:nowrap; }
+  #stats { color:#7d8590; white-space:nowrap; }
+  #q { background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:6px 10px; border-radius:6px; width:230px; }
+  .btn { background:#21262d; border:1px solid #30363d; color:#e6edf3; padding:6px 10px; border-radius:6px; cursor:pointer; }
+  .btn:hover { background:#30363d; }
+  .btn.on { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+  #legend { position:fixed; left:12px; bottom:12px; z-index:20; background:rgba(13,17,23,.9);
+    border:1px solid #21262d; border-radius:8px; padding:8px 10px; max-height:44vh; overflow:auto; }
+  #legend div { display:flex; align-items:center; gap:6px; cursor:pointer; padding:2px 0; user-select:none; }
+  #legend div.off { opacity:.35; text-decoration:line-through; }
+  #legend .dot { width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
+  #legend .cnt { color:#7d8590; margin-left:auto; }
+  canvas { position:fixed; inset:0; width:100vw; height:100vh; display:block; cursor:grab; }
+  canvas.drag { cursor:grabbing; }
+  #panel { position:fixed; top:66px; right:12px; width:360px; max-height:78vh; overflow:auto; z-index:20;
+    background:rgba(13,17,23,.96); border:1px solid #30363d; border-radius:10px; padding:12px 14px; display:none; }
+  #panel.show { display:block; }
+  #panel h2 { font-size:13px; margin:0 0 8px; color:#58a6ff; word-break:break-all; }
+  #panel .row { display:flex; gap:8px; padding:2px 0; border-bottom:1px dashed #21262d; }
+  #panel .row b { color:#8b949e; font-weight:400; min-width:92px; }
+  #panel .sec { margin-top:10px; color:#7d8590; }
+  #panel ul { margin:4px 0 0; padding-left:16px; }
+  #panel li { color:#c9d1d9; }
+  #hint { position:fixed; bottom:12px; right:12px; z-index:20; color:#7d8590; text-align:right; }
+  .pill { display:inline-block; padding:1px 6px; border-radius:10px; font-size:11px; }
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>REXI-AI · Bản đồ kiến trúc</h1>
+  <span id="stats"></span>
+  <input id="q" placeholder="tìm file / route / hàm / bảng…"/>
+  <button class="btn on" id="v2d">2D</button>
+  <button class="btn" id="v3d">3D</button>
+  <button class="btn" id="reset">Reset</button>
+  <button class="btn" id="fit">Fit</button>
+</div>
+<canvas id="cv"></canvas>
+<div id="legend"></div>
+<div id="panel"></div>
+<div id="hint">kéo = xoay · lăn chuột = zoom · click node = chi tiết<br/>sinh tự động bởi tools/dev/gen_map.mjs — KHÔNG sửa tay</div>
+
+<script>
+const DATA = /*__MAP_DATA__*/null;
+
+const LAYER_ORDER = ["entry","ui","flib","routes","endpoint","middleware","services","brain","butils","deploy","db"];
+const LAYER_COLOR = {
+  entry:"#ff6b6b", ui:"#4dabf7", flib:"#63e6be", routes:"#ffd43b", endpoint:"#ffe066",
+  middleware:"#ffa94d", services:"#b197fc", brain:"#f783ac", butils:"#74c0fc",
+  deploy:"#adb5bd", db:"#38d9a9"
+};
+const LAYER_LABEL = {
+  entry:"Entry / khởi động", ui:"Frontend UI (màn hình/component)", flib:"Frontend lib & tiện ích",
+  routes:"Backend routes", endpoint:"API request (method+path)", middleware:"Middleware",
+  services:"Backend services", brain:"Brain (AI/nhớ/NLP)", butils:"Backend utils/config/scheduler",
+  deploy:"Deploy / runtime", db:"Bảng dữ liệu (DB)"
+};
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W=0,H=0,DPR=Math.min(2,window.devicePixelRatio||1);
+function resize(){ W=cv.clientWidth; H=cv.clientHeight; cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); draw(); }
+window.addEventListener('resize', resize);
+
+const nodes = DATA.nodes.slice();
+const byId = {}; nodes.forEach(n=>byId[n.id]=n);
+const edges = DATA.edges.filter(e=>byId[e.source]&&byId[e.target]);
+
+const byLayer = {}; nodes.forEach(n=>(byLayer[n.layer]=byLayer[n.layer]||[]).push(n));
+const ZHAP = 170;
+
+function layout(){
+  const pos2 = {}, pos3 = {};
+  LAYER_ORDER.forEach((layer, li)=>{
+    const arr = (byLayer[layer]||[]).slice();
+    arr.sort((a,b)=>(b.size||0)-(a.size||0));
+    const cols = Math.max(1, Math.min(30, Math.ceil(Math.sqrt(arr.length)*1.6)));
+    const rows = Math.ceil(arr.length/cols);
+    const sx = 112, sy = 86;
+    arr.forEach((n,i)=>{
+      const cxi = i%cols, cyi = Math.floor(i/cols);
+      const gx = (cxi-(cols-1)/2)*sx;
+      const gy = (cyi-(rows-1)/2)*sy;
+      pos2[n.id] = { x:gx, y:(li-(LAYER_ORDER.length-1)/2)*280 + gy };
+      pos3[n.id] = { x:gx, y:gy, z:(li-(LAYER_ORDER.length-1)/2)*ZHAP };
+    });
+  });
+  return {pos2,pos3};
+}
+const POS = layout();
+
+let view='2d', yaw=-0.55, pitch=0.5, zoom=1, panX=0, panY=0;
+let hidden = new Set(), search='', selected=null, hover=null;
+const screen = {}; // id -> {x,y,s,depth}
+
+function project(){
+  const cx=W/2+panX, cy=H/2+panY;
+  const cosY=Math.cos(yaw), sinY=Math.sin(yaw), cosP=Math.cos(pitch), sinP=Math.sin(pitch);
+  const f=1500;
+  for(const n of nodes){
+    let p, d=0;
+    if(view==='2d'){ p=POS.pos2[n.id]; const s=zoom; screen[n.id]={x:cx+p.x*s, y:cy+p.y*s, s, depth:0}; }
+    else{
+      p=POS.pos3[n.id];
+      let x=p.x*cosY + p.z*sinY;
+      let z=-p.x*sinY + p.z*cosY;
+      let y=p.y*cosP - z*sinP;
+      z = p.y*sinP + z*cosP;
+      const s=f/(f+z)*zoom*1.25;
+      screen[n.id]={x:cx+x*s, y:cy+y*s, s, depth:z};
+    }
+  }
+}
+function fitToView(pad=0.92){
+  zoom=1; panX=0; panY=0; project();
+  let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;
+  for(const n of nodes){ if(!visible(n)) continue; const s=screen[n.id]; if(!s) continue;
+    if(s.x<minx)minx=s.x; if(s.x>maxx)maxx=s.x; if(s.y<miny)miny=s.y; if(s.y>maxy)maxy=s.y; }
+  const w=Math.max(1,maxx-minx), h=Math.max(1,maxy-miny);
+  const z=Math.min((W-140)/w,(H-180)/h)*pad;
+  zoom=Math.max(0.04,Math.min(6,z));
+  const cX=(minx+maxx)/2 - W/2, cY=(miny+maxy)/2 - H/2;
+  panX=-cX*zoom; panY=-cY*zoom;
+  draw();
+}
+
+function visible(n){ return !hidden.has(n.layer); }
+function dimBySearch(n){ if(!search) return false; return !(n.searchText||'').includes(search); }
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  project();
+  const edgeList = edges.map(e=>({e,a:screen[e.source],b:screen[e.target]}))
+    .filter(o=>o.a&&o.b)
+    .filter(o=>visible(byId[o.e.source])&&visible(byId[o.e.target]));
+  // edges
+  for(const {e,a,b} of edgeList){
+    const dim = search && (dimBySearch(byId[e.source])&&dimBySearch(byId[e.target]));
+    ctx.strokeStyle = dim? 'rgba(90,100,110,.08)' : (e.kind==='api'? 'rgba(31,111,235,.45)' : e.kind==='mount'? 'rgba(255,212,59,.5)' : 'rgba(120,130,145,.28)');
+    ctx.lineWidth = e.kind==='api'?1.2:1;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }
+  // nodes (draw far first in 3d)
+  const order = nodes.slice().sort((a,b)=>{
+    if(view!=='3d') return 0;
+    return (screen[b.id]?.depth||0)-(screen[a.id]?.depth||0);
+  });
+  for(const n of order){
+    if(!visible(n)) continue;
+    const s=screen[n.id]; if(!s) continue;
+    const dim = dimBySearch(n);
+    const isSel = n.id===selected, isHov = n.id===hover;
+    const base = ({entry:9,ui:7,flib:5,routes:7,endpoint:4,middleware:4,services:6,brain:5,butils:4,deploy:5,db:5})[n.layer]||5;
+    const r = Math.max(2.5, base*s.s*0.9 + (isSel?3:0));
+    ctx.globalAlpha = dim? .16 : 1;
+    ctx.beginPath(); ctx.arc(s.x,s.y,r,0,7);
+    ctx.fillStyle = isSel? '#ffffff' : (isHov? '#fff' : LAYER_COLOR[n.layer]||'#888');
+    ctx.fill();
+    if(isSel){ ctx.lineWidth=2; ctx.strokeStyle='#1f6feb'; ctx.stroke(); }
+    // labels: important or zoomed or hovered/selected
+    const showLabel = isSel||isHov||(!dim && (s.s>1.15 || (n.imp&&n.imp>=2)));
+    if(showLabel){
+      ctx.globalAlpha = dim? .25 : .92;
+      ctx.fillStyle='#c9d1d9'; ctx.font='11px ui-monospace,monospace';
+      let label=n.short||n.label||n.id;
+      if(label.length>30) label=label.slice(0,29)+'…';
+      ctx.fillText(label, s.x+r+3, s.y+3);
+    }
+    ctx.globalAlpha=1;
+  }
+}
+
+// interactions
+let drag=false, lx=0, ly=0, moved=false;
+cv.addEventListener('mousedown', e=>{ drag=true; moved=false; lx=e.clientX; ly=e.clientY; cv.classList.add('drag'); });
+window.addEventListener('mouseup', e=>{ if(drag && !moved){ pick(e); } drag=false; cv.classList.remove('drag'); });
+window.addEventListener('mousemove', e=>{
+  if(drag){
+    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    if(Math.abs(dx)+Math.abs(dy)>2) moved=true;
+    if(view==='3d'){ yaw+=dx*0.01; pitch+=dy*0.01; pitch=Math.max(-1.4,Math.min(1.4,pitch)); }
+    else { panX+=dx; panY+=dy; }
+    draw();
+  } else {
+    let best=null,bd=14*14;
+    for(const n of nodes){ const s=screen[n.id]; if(!s||!visible(n))continue; const dd=(s.x-e.clientX)**2+(s.y-e.clientY)**2; if(dd<bd){bd=dd;best=n.id;} }
+    if(best!==hover){ hover=best; draw(); }
+  }
+});
+cv.addEventListener('wheel', e=>{ e.preventDefault(); zoom *= e.deltaY<0?1.1:1/1.1; zoom=Math.max(.15,Math.min(6,zoom)); draw(); }, {passive:false});
+cv.addEventListener('dblclick', ()=>{ if(selected){ // focus
+    const s=screen[selected]; if(s){ panX += (W/2)-(s.x); panY += (H/2)-(s.y); draw(); } } });
+
+function pick(e){
+  let best=null,bd=14*14;
+  for(const n of nodes){ const s=screen[n.id]; if(!s||!visible(n))continue; const dd=(s.x-e.clientX)**2+(s.y-e.clientY)**2; if(dd<bd){bd=dd;best=n.id;} }
+  select(best);
+}
+function select(id){
+  selected=id; renderPanel(); draw();
+}
+function renderPanel(){
+  const el=document.getElementById('panel');
+  const n = selected? byId[selected]:null;
+  if(!n){ el.classList.remove('show'); return; }
+  el.classList.add('show');
+  const L=[];
+  L.push('<h2>'+esc(n.short||n.label||n.id)+'</h2>');
+  L.push(row('Tầng', '<span class="pill" style="background:'+(LAYER_COLOR[n.layer]||'#888')+'22;color:'+(LAYER_COLOR[n.layer]||'#888')+'">'+(LAYER_LABEL[n.layer]||n.layer)+'</span>'));
+  if(n.path) L.push(row('Đường dẫn', esc(n.path)));
+  if(n.method) L.push(row('Request', '<b style="color:#ffe066">'+esc(n.method)+'</b>'));
+  if(n.type) L.push(row('Loại', esc(n.type)));
+  if(n.loc) L.push(row('Số dòng', n.loc));
+  if(typeof n.functions==='number') L.push(row('Hàm (≈)', n.functions));
+  if(n.size) L.push(row('Kích thước', (n.size/1024).toFixed(1)+' KB'));
+  if(n.detail) L.push(row('Ghi chú', esc(n.detail)));
+  const outE = edges.filter(e=>e.source===n.id);
+  const inE = edges.filter(e=>e.target===n.id);
+  if(n.endpoints&&n.endpoints.length){ L.push('<div class="sec">Endpoints ('+n.endpoints.length+')</div><ul>'+n.endpoints.slice(0,120).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>'); }
+  if(n.calls&&n.calls.length){ L.push('<div class="sec">Gọi API ('+n.calls.length+')</div><ul>'+n.calls.slice(0,120).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>'); }
+  if(n.imports&&n.imports.length){ L.push('<div class="sec">Import ('+n.imports.length+')</div><ul>'+n.imports.slice(0,80).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>'); }
+  if(outE.length) L.push('<div class="sec">→ Trỏ tới ('+outE.length+')</div><ul>'+outE.slice(0,60).map(e=>'<li>'+esc((byId[e.target]||{}).short||e.target)+' <span style="color:#7d8590">['+e.kind+']</span></li>').join('')+'</ul>');
+  if(inE.length) L.push('<div class="sec">← Được gọi bởi ('+inE.length+')</div><ul>'+inE.slice(0,60).map(e=>'<li>'+esc((byId[e.source]||{}).short||e.source)+' <span style="color:#7d8590">['+e.kind+']</span></li>').join('')+'</ul>');
+  el.innerHTML=L.join('');
+}
+function row(k,v){ return '<div class="row"><b>'+k+'</b><span>'+v+'</span></div>'; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// search + legend
+document.getElementById('q').addEventListener('input', e=>{ search=e.target.value.trim().toLowerCase(); draw(); });
+function buildLegend(){
+  const el=document.getElementById('legend'); el.innerHTML='';
+  LAYER_ORDER.forEach(layer=>{
+    const cnt=(byLayer[layer]||[]).length; if(!cnt) return;
+    const d=document.createElement('div');
+    d.innerHTML='<span class="dot" style="background:'+(LAYER_COLOR[layer]||'#888')+'"></span>'+LAYER_LABEL[layer]+'<span class="cnt">'+cnt+'</span>';
+    d.onclick=()=>{ if(hidden.has(layer)) hidden.delete(layer); else hidden.add(layer); d.classList.toggle('off'); draw(); };
+    el.appendChild(d);
+  });
+}
+document.getElementById('v2d').onclick=()=>{ view='2d'; document.getElementById('v2d').classList.add('on'); document.getElementById('v3d').classList.remove('on'); fitToView(); };
+document.getElementById('v3d').onclick=()=>{ view='3d'; document.getElementById('v3d').classList.add('on'); document.getElementById('v2d').classList.remove('on'); fitToView(0.82); };
+document.getElementById('reset').onclick=()=>{ yaw=-0.55; pitch=0.5; search=''; document.getElementById('q').value=''; hidden.clear(); buildLegend(); selected=null; renderPanel(); fitToView(view==='3d'?0.82:0.92); };
+document.getElementById('fit').onclick=()=>{ fitToView(view==='3d'?0.82:0.92); };
+
+document.getElementById('stats').textContent = nodes.length+' node · '+edges.length+' liên kết · '+nodes.filter(n=>n.layer==='endpoint').length+' request · '+nodes.filter(n=>n.layer==='db').length+' bảng · '+ (DATA.generated||'');
+buildLegend();
+resize();
+fitToView();
+</script>
+</body>
+</html>
