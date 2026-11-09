@@ -311,7 +311,7 @@ class BrowserStreamService {
     };
 
     const elements = await this._interactiveMap().catch(() => []);
-    const elList = elements.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''} @(${e.x},${e.y})`).join('\n');
+    const elList = elements.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''}${e.href ? ' href=' + e.href : ''} @(${e.x},${e.y})`).join('\n');
     const vp = await this._viewportText(2500).catch(() => '');
 
     try {
@@ -328,7 +328,7 @@ class BrowserStreamService {
                 'PHẦN TỬ TƯƠNG TÁC ĐANG HIỂN THỊ (chọn đúng từ đây):\n' + (elList || '(không thấy phần tử nào)') + '\n' +
                 'NỘI DUNG ĐANG NHÌN THẤY:\n' + (vp ? vp.slice(0, 1200) : '(trống)') + '\n\n' +
                 'QUY TẮC CHỌN:\n' +
-                '- click: ưu tiên selector "text=<đúng nhãn nhìn thấy>" (vd text=Next) hoặc "#id" hoặc "[name=...]" LẤY TỪ DANH SÁCH TRÊN.\n' +
+                '- click: ưu tiên selector lấy ĐÚNG TỪ DANH SÁCH: link thì dùng a[href="<href>"] (chính xác nhất), hoặc "#id", hoặc "[name=...]". Nếu nhiều phần tử cùng chữ "Next" thì PHẢI dùng a[href=...] để chọn đúng cái cần.\n' +
                 '- Phần tử là canvas/không có nhãn (vd phím đàn, nút vẽ bằng hình) → dùng {"type":"clickAt","x":..,"y":..} theo toạ độ trong danh sách.\n' +
                 '- type: cần selector ô nhập (từ danh sách). press: phím (vd Enter). scroll: direction up/down. goto: url.\n' +
                 '- Chỉ trả về 1 hành động nếu đủ. Không cần thao tác → actions rỗng.'
@@ -392,7 +392,7 @@ class BrowserStreamService {
       let title = ''; try { title = await this.page.title(); } catch { /* ignore */ }
       const after = await this._viewportText(2500).catch(() => '');
       const actionsUsed = actions.map(a => a.type + (a.selector ? (' ' + a.selector) : '') + (a.x != null ? (' (' + a.x + ',' + a.y + ')') : '')).join(' | ');
-      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after, actionsUsed } };
+      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after, actionsUsed, mapUsed: elList.slice(0, 1400) } };
     } catch (e) {
       return { success: false, error: 'Lỗi AI Action: ' + e.message };
     }
@@ -469,6 +469,7 @@ class BrowserStreamService {
             text: label,
             id: el.id || '',
             name: el.getAttribute('name') || '',
+            href: el.tagName === 'A' ? (el.getAttribute('href') || '') : '',
             x: Math.round(r.left + r.width / 2),
             y: Math.round(r.top + r.height / 2),
             onScreen,
