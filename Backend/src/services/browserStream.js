@@ -351,11 +351,27 @@ class BrowserStreamService {
         return { success: true, result: { message: 'Không có hành động phù hợp cho chỉ dẫn này.' } };
       }
 
+      let lastError = '';
       for (const a of actions) {
         try {
           switch (a.type) {
             case 'click':
-              if (a.selector) await this.page.locator(a.selector).first().click({ timeout: 10000 });
+              if (a.selector) {
+                const loc = this.page.locator(a.selector).first();
+                try {
+                  await loc.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+                  await loc.click({ timeout: 8000 });
+                } catch (e1) {
+                  // fallback 1: click trực tiếp bằng DOM
+                  try { await loc.evaluate((el) => el.click()); }
+                  catch (e2) {
+                    // fallback 2: nếu là link → điều hướng thẳng tới href
+                    const href = await loc.getAttribute('href').catch(() => null);
+                    if (href) await this.page.goto(new URL(href, this.page.url()).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    else throw e1;
+                  }
+                }
+              }
               await this.page.waitForTimeout(600);
               break;
             case 'clickAt':
@@ -384,7 +400,8 @@ class BrowserStreamService {
               return { success: true, result: { message: '✅ Đã hoàn tất: ' + (a.description || instruction) } };
           }
         } catch (e) {
-          console.log('[BrowserAction] Bỏ qua action lỗi:', a.type, e.message);
+          lastError = a.type + (a.selector ? ' ' + a.selector : '') + ': ' + e.message;
+          console.log('[BrowserAction] action loi:', lastError);
         }
       }
       // Sau hành động có thể đã điều hướng trang → chờ load xong rồi mới đọc tiêu đề/nội dung
@@ -393,7 +410,7 @@ class BrowserStreamService {
       let title = ''; try { title = await this.page.title(); } catch { /* ignore */ }
       const after = await this._viewportText(2500).catch(() => '');
       const actionsUsed = actions.map(a => a.type + (a.selector ? (' ' + a.selector) : '') + (a.x != null ? (' (' + a.x + ',' + a.y + ')') : '')).join(' | ');
-      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after, actionsUsed, mapUsed: elList.slice(0, 1400) } };
+      return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after, actionsUsed, error: lastError || undefined, mapUsed: elList.slice(0, 1400) } };
     } catch (e) {
       return { success: false, error: 'Lỗi AI Action: ' + e.message };
     }
