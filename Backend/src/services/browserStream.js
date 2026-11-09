@@ -467,7 +467,7 @@ class BrowserStreamService {
 
   async scroll(deltaX, deltaY) {
     if (!this.page) await this.launch();
-    await this.page.mouse.wheel(deltaX, deltaY);
+    await this.page.mouse.wheel(Number(deltaX) || 0, Number(deltaY) || 0);
     return { success: true };
   }
 
