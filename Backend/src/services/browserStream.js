@@ -407,7 +407,13 @@ class BrowserStreamService {
       // Sau hành động có thể đã điều hướng trang → chờ load xong rồi mới đọc tiêu đề/nội dung
       await this.page.waitForLoadState('domcontentloaded', { timeout: 6000 }).catch(() => {});
       await this.page.waitForTimeout(600).catch(() => {});
-      let title = ''; try { title = await this.page.title(); } catch { /* ignore */ }
+      // Một số trang có trang trung gian tiêu đề "Loading ..." → chờ tới trang thật rồi mới đọc
+      let title = '';
+      for (let i = 0; i < 8; i++) {
+        try { title = await this.page.title(); } catch { title = ''; }
+        if (title && !/^loading/i.test(title)) break;
+        await this.page.waitForTimeout(400).catch(() => {});
+      }
       const after = await this._viewportText(2500).catch(() => '');
       const actionsUsed = actions.map(a => a.type + (a.selector ? (' ' + a.selector) : '') + (a.x != null ? (' (' + a.x + ',' + a.y + ')') : '')).join(' | ');
       return { success: true, result: { message: `✅ Đã thực hiện ${actions.length} hành động: ${instruction}`, url: this.page.url(), title, text: after, viewportText: after, actionsUsed, error: lastError || undefined, mapUsed: elList.slice(0, 1400) } };
