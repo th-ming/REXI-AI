@@ -310,7 +310,8 @@ class BrowserStreamService {
       required: ['actions']
     };
 
-    const elements = await this._interactiveMap().catch(() => []);
+    const terms = (String(instruction).toLowerCase().match(/[a-zà-ỹ0-9]+/gi) || []).filter(w => w.length >= 2);
+    const elements = await this._interactiveMap(80, terms).catch(() => []);
     const elList = elements.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''}${e.href ? ' href=' + e.href : ''} @(${e.x},${e.y})`).join('\n');
     const vp = await this._viewportText(2500).catch(() => '');
 
@@ -447,10 +448,10 @@ class BrowserStreamService {
   }
 
   // Danh sách phần tử TƯƠNG TÁC đang hiển thị (nhãn + toạ độ) — cấp cho LLM của act() để chọn đúng selector.
-  async _interactiveMap(max = 60) {
+  async _interactiveMap(max = 80, terms = []) {
     if (!this.page) return [];
     try {
-      return await this.page.evaluate((max) => {
+      return await this.page.evaluate((max, terms) => {
         const sel = 'a,button,input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="tab"],[onclick]';
         const vh = window.innerHeight, vw = window.innerWidth;
         const out = [];
@@ -474,12 +475,13 @@ class BrowserStreamService {
             y: Math.round(r.top + r.height / 2),
             onScreen,
           });
-          if (out.length >= max * 3) break;
+          if (out.length >= max * 4) break;
         }
-        // Ưu tiên phần tử đang hiển thị lên trước (Playwright tự cuộn tới khi click phần tử ngoài màn hình)
-        out.sort((a, b) => (b.onScreen ? 1 : 0) - (a.onScreen ? 1 : 0));
+        // Ưu tiên: (1) phần tử có nhãn khớp từ khoá trong chỉ dẫn, (2) phần tử đang hiển thị
+        const hit = (e) => { const t = (e.text || '').toLowerCase(); return terms.some(w => t.includes(w)) ? 1 : 0; };
+        out.sort((a, b) => (hit(b) - hit(a)) || ((b.onScreen ? 1 : 0) - (a.onScreen ? 1 : 0)));
         return out.slice(0, max);
-      }, max);
+      }, max, terms);
     } catch { return []; }
   }
 
