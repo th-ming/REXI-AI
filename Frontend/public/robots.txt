@@ -1,0 +1,11 @@
+# Rexi AI — https://rexiai.bot.cd
+User-agent: *
+Allow: /
+
+# Khu vực riêng tư / không cần index
+Disallow: /admin
+Disallow: /api/
+Disallow: /ws/
+Disallow: /test-player.html
+
+Sitemap: https://rexiai.bot.cd/sitemap.xml

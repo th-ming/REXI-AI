@@ -1,0 +1,28 @@
+{
+  "name": "Rexi AI — Trợ Lý AI Đa Mô Hình",
+  "short_name": "Rexi AI",
+  "description": "Trợ lý AI đa mô hình tiếng Việt: chat, viết code, tạo video, chuyển văn bản thành giọng nói, xem YouTube không quảng cáo và hơn 35+ công cụ.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "categories": ["productivity", "utilities", "entertainment"],
+  "icons": [
+    {
+      "src": "/rexi_cat_icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
