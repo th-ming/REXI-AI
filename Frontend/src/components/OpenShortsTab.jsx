@@ -156,7 +156,7 @@ export default function OpenShortsTab({ authToken, showToast }) {
     <div className="flex flex-col h-full w-full bg-[var(--bg-main)] overflow-y-auto">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-card)] border-b border-white/10 shrink-0 sticky top-0 z-10">
-        <span className="w-7 h-7 rounded-lg bg-gradient-to-tr from-fuchsia-500 to-orange-500 flex items-center justify-center shrink-0">
+        <span className="w-7 h-7 rounded-lg bg-[var(--accent)] flex items-center justify-center shrink-0">
           <Scissors size={14} className="text-white" />
         </span>
         <span className="text-xs font-bold text-[var(--text-main)] whitespace-nowrap">OpenShorts</span>
@@ -184,7 +184,7 @@ export default function OpenShortsTab({ authToken, showToast }) {
             <button
               type="submit"
               disabled={loading}
-              className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-orange-500 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+              className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold text-white bg-[var(--accent)] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
             >
               {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               {loading ? tx(lang, 'Đang cắt…') : tx(lang, 'Tạo Shorts')}
@@ -240,13 +240,13 @@ export default function OpenShortsTab({ authToken, showToast }) {
             <div className="flex items-center gap-2">
               <button
                 onClick={confirmLowQuality}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-orange-500 hover:opacity-90 transition-all"
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[var(--accent)] hover:brightness-110 transition-colors"
               >
                 {tx(lang, 'Vẫn cắt (chất lượng thấp)')}
               </button>
               <button
                 onClick={() => setPendingConfirm(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
               >
                 {tx(lang, 'Hủy')}
               </button>
@@ -306,13 +306,13 @@ export default function OpenShortsTab({ authToken, showToast }) {
                         href={fullVideoUrl(c.video_url)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-200 hover:bg-white/10 transition-all"
+                        className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-200 hover:bg-white/10 transition-colors"
                       >
                         <Download size={12} /> {tx(lang, 'Tải MP4')}
                       </a>
                       <button
                         onClick={() => copyText(c.video_title_for_youtube_short + '\n\n' + c.video_description_for_tiktok, 'caption TikTok')}
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-all"
+                        className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
                         title="Copy caption TikTok"
                       >
                         <Copy size={13} />
@@ -328,7 +328,7 @@ export default function OpenShortsTab({ authToken, showToast }) {
         {/* Trạng thái rỗng */}
         {!job && !loading && clips.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-fuchsia-500 to-orange-500 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-[var(--accent)] flex items-center justify-center">
               <Scissors size={22} className="text-white" />
             </div>
             <p className="text-xs text-slate-500 max-w-sm">

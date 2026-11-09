@@ -165,7 +165,7 @@ export default function VideoToolsModal({ videoToolsOpen, setVideoToolsOpen, API
           <span>Server TTS: edge-tts | Browser: Web Speech API | Repo: GitHub</span>
           <button
             onClick={handleTTSTest}
-            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-purple-500/20 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/30 transition-all text-xs font-medium"
+            className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-slate-300 hover:bg-white/[0.08] transition-colors text-xs font-medium"
           >
             Test Server TTS
           </button>

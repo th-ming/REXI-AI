@@ -5,12 +5,12 @@ import { t } from '../i18n';
 
 // ── Welcome quick-actions (redesign) — thêm/bớt card chỉ sửa mảng này ──
 const QUICK_ACTIONS = [
-  { tab: 'video',      labelKey: 'qaVideo',      descKey: 'qaVideoDesc',      icon: <Clapperboard size={18} />, color: 'text-sky-400',     box: 'bg-sky-500/10 border-sky-500/25' },
-  { tab: 'tts',        labelKey: 'qaTts',        descKey: 'qaTtsDesc',        icon: <Mic size={18} />,         color: 'text-cyan-400',    box: 'bg-cyan-500/10 border-cyan-500/25' },
-  { tab: 'image',      labelKey: 'qaImage',      descKey: 'qaImageDesc',      icon: <ImageIcon size={18} />,   color: 'text-violet-400',  box: 'bg-violet-500/10 border-violet-500/25' },
-  { tab: 'documents',  labelKey: 'qaDocs',       descKey: 'qaDocsDesc',       icon: <FileText size={18} />,    color: 'text-emerald-400', box: 'bg-emerald-500/10 border-emerald-500/25' },
-  { tab: 'youtube',    labelKey: 'qaYoutube',    descKey: 'qaYoutubeDesc',    icon: <MonitorPlay size={18} />, color: 'text-red-400',     box: 'bg-red-500/10 border-red-500/25' },
-  { tab: 'iptv',       labelKey: 'qaIptv',       descKey: 'qaIptvDesc',       icon: <Tv size={18} />,          color: 'text-amber-400',   box: 'bg-amber-500/10 border-amber-500/25' },
+  { tab: 'video',      labelKey: 'qaVideo',      descKey: 'qaVideoDesc',      icon: <Clapperboard size={18} /> },
+  { tab: 'tts',        labelKey: 'qaTts',        descKey: 'qaTtsDesc',        icon: <Mic size={18} /> },
+  { tab: 'image',      labelKey: 'qaImage',      descKey: 'qaImageDesc',      icon: <ImageIcon size={18} /> },
+  { tab: 'documents',  labelKey: 'qaDocs',       descKey: 'qaDocsDesc',       icon: <FileText size={18} /> },
+  { tab: 'youtube',    labelKey: 'qaYoutube',    descKey: 'qaYoutubeDesc',    icon: <MonitorPlay size={18} /> },
+  { tab: 'iptv',       labelKey: 'qaIptv',       descKey: 'qaIptvDesc',       icon: <Tv size={18} /> },
   { tab: 'opencut',    labelKey: 'qaOpenCut',    descKey: 'qaOpenCutDesc',    icon: <Scissors size={18} /> },
   { tab: 'openshorts', labelKey: 'qaOpenShorts', descKey: 'qaOpenShortsDesc', icon: <Film size={18} /> },
   { tab: 'classroom',  labelKey: 'qaClassroom',  descKey: 'qaClassroomDesc',  icon: <GraduationCap size={18} /> },
@@ -20,13 +20,13 @@ const QUICK_ACTIONS = [
 // 6 ô "đại diện" hiện dạng tile; phần còn lại nằm trong dải pill cuộn ngang.
 const FEATURED_ACTIONS = QUICK_ACTIONS.slice(0, 6);
 const EXTRA_ACTIONS = [
-  { tab: 'opencut',    labelKey: 'qaOpenCut',    icon: <Scissors size={13} />,      color: 'text-sky-400' },
-  { tab: 'openshorts', labelKey: 'qaOpenShorts', icon: <Film size={13} />,          color: 'text-fuchsia-400' },
-  { tab: 'classroom',  labelKey: 'qaClassroom',  icon: <GraduationCap size={13} />, color: 'text-teal-300' },
-  { tab: 'games',      labelKey: 'qaGames',      icon: <Gamepad2 size={13} />,      color: 'text-amber-400' },
-  { tab: 'browser',    labelKey: 'qaBrowser',   icon: <Bot size={13} />,            color: 'text-cyan-400' },
-  { tab: 'files',      labelKey: 'qaFiles',      icon: <Folder size={13} />,        color: 'text-orange-300' },
-  { tab: 'desktop',    labelKey: 'qaDesktop',   icon: <Monitor size={13} />,        color: 'text-slate-400' },
+  { tab: 'opencut',    labelKey: 'qaOpenCut',    icon: <Scissors size={13} /> },
+  { tab: 'openshorts', labelKey: 'qaOpenShorts', icon: <Film size={13} /> },
+  { tab: 'classroom',  labelKey: 'qaClassroom',  icon: <GraduationCap size={13} /> },
+  { tab: 'games',      labelKey: 'qaGames',      icon: <Gamepad2 size={13} /> },
+  { tab: 'browser',    labelKey: 'qaBrowser',   icon: <Bot size={13} /> },
+  { tab: 'files',      labelKey: 'qaFiles',      icon: <Folder size={13} /> },
+  { tab: 'desktop',    labelKey: 'qaDesktop',   icon: <Monitor size={13} /> },
 ];
 
 export default function ChatTab({
@@ -117,9 +117,9 @@ export default function ChatTab({
                       key={a.tab}
                       onClick={() => onOpenFeature?.(a.tab)}
                       style={{ animationDelay: `${80 + i * 55}ms` }}
-                      className="rexi-rise group flex items-center gap-3 text-left rounded-xl p-3 bg-[#1e1f20] border border-white/[0.06] hover:border-white/[0.14] hover:bg-[#222325] transition-colors duration-150"
+                      className="rexi-rise group flex items-center gap-3 text-left rounded-2xl p-3 bg-[#1e1f20] border border-white/[0.06] hover:border-white/[0.14] transition-colors duration-150"
                     >
-                      <span className={`inline-flex items-center justify-center w-10 h-10 rounded-lg border shrink-0 ${a.box || 'border-white/[0.08] bg-white/[0.04]'} ${a.color || 'text-slate-300'}`}>
+                      <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] text-[var(--c-accent-soft)] shrink-0">
                         {a.icon}
                       </span>
                       <span className="min-w-0">
@@ -138,7 +138,7 @@ export default function ChatTab({
                       style={{ animationDelay: `${410 + i * 45}ms` }}
                       className="rexi-rise rexi-pill inline-flex items-center justify-center gap-1.5 min-w-0 w-full px-1 py-1.5 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] whitespace-nowrap overflow-hidden text-slate-300 hover:text-white"
                     >
-                      <span className={x.color || 'text-slate-400'}>{x.icon}</span>{t(lang, x.labelKey)}
+                      <span className="text-slate-400">{x.icon}</span>{t(lang, x.labelKey)}
                     </button>
                   ))}
                 </div>
@@ -163,7 +163,7 @@ export default function ChatTab({
                   {msg.vai_tro === 'user' ? (
                     <p className="whitespace-pre-wrap">{msg.noi_dung}</p>
                   ) : msg.vai_tro === 'admin' ? (
-                    <div className="bg-gradient-to-r from-amber-900/30 to-orange-900/30 border border-amber-500/30 rounded-xl p-4">
+                    <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-4">
                       <div className="flex items-center gap-1.5 mb-2 text-[11px] text-amber-400 font-semibold">
                         <span className="inline-block w-2 h-2 rounded-full bg-amber-400"></span>
                         {t(lang, 'Phản hồi từ Admin')}
@@ -247,9 +247,9 @@ export default function ChatTab({
             <div className="flex gap-3 items-center text-slate-400 text-xs">
               <img src="/rexi_cat_icon.png" alt="Rexi" className="rexi-logo rexi-logo-no-glow w-7 h-7 object-contain" />
               <div className="flex items-center gap-1.5 bg-[#1e1f20] px-4 py-2.5 rounded-full border border-white/5">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce"></span>
-                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.2s]"></span>
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-bounce [animation-delay:0.4s]"></span>
+                <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce"></span>
+                <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce [animation-delay:0.2s]"></span>
+                <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce [animation-delay:0.4s]"></span>
                 <span className="ml-2 font-medium">{t(lang, 'Rexi đang phân tích...')}</span>
               </div>
             </div>
@@ -483,7 +483,7 @@ export default function ChatTab({
             title={hasSendText ? (lang === 'vi' ? 'Gửi tin nhắn' : 'Send message') : t(lang, 'voiceInput')}
             className={`ml-1.5 p-2.5 rounded-xl transition-all shrink-0 ${
               hasSendText
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-40 text-white shadow-md'
+                ? 'bg-[var(--accent)] hover:brightness-110 disabled:opacity-40 text-white'
                 : listening
                   ? 'text-rose-400 bg-rose-500/15 animate-pulse'
                   : 'text-slate-400 hover:text-cyan-400 hover:bg-white/5'

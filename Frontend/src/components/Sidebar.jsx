@@ -97,15 +97,15 @@ export default function Sidebar({
         <div className="flex items-center gap-3 min-w-0">
           <RexiLogo className="w-8 h-8" />
           <div className="min-w-0">
-            <h1 className="font-bold text-base bg-gradient-to-r from-cyan-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent truncate">
+            <h1 className="font-bold text-base text-[var(--text-main)] truncate">
               Rexi AI OS
             </h1>
-            <span className="text-[10px] text-cyan-400/80 tracking-widest uppercase font-medium truncate block">Master Suite v2.0</span>
+            <span className="text-[11px] text-[var(--text-sub)] font-medium truncate block">Master Suite v2.0</span>
           </div>
         </div>
         <button
           onClick={() => setSidebarOpen(false)}
-          className="group inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:bg-white/10 hover:text-cyan-300 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 transition-all duration-200 shrink-0"
+          className="group inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:bg-white/10 hover:text-[var(--c-accent-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 transition-colors duration-200 shrink-0"
           title={t(lang, 'collapseSidebar') || 'Thu gọn'}
           aria-label={t(lang, 'ariaCollapse')}
         >
@@ -117,7 +117,7 @@ export default function Sidebar({
       <div className="p-3">
         <button
           onClick={handleNewConversation}
-          className="btn-new-conv w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium text-xs transition-all"
+          className="btn-new-conv w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[var(--accent)] hover:brightness-110 text-white font-medium text-xs transition-colors"
         >
           <Plus size={15} />
           <span>{t(lang, 'newConversation')}</span>
@@ -131,13 +131,13 @@ export default function Sidebar({
       <div className="grid grid-cols-2 gap-2 px-3 mt-2">
         <button
           onClick={() => setSkillsOpen(true)}
-          className="btn-skills flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:text-white text-[11px] font-medium transition-all"
+          className="btn-skills flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-white/[0.04] border border-white/10 text-slate-300 hover:text-white text-[11px] font-medium transition-colors"
         >
           <Layers size={13} /> {t(lang, 'skillsBtn')}
         </button>
         <button
           onClick={() => setSuperToolsOpen(true)}
-          className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-amber-900/30 border border-amber-500/30 text-amber-300 hover:text-white text-[11px] font-medium transition-all"
+          className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-white/[0.04] border border-white/10 text-slate-300 hover:text-white text-[11px] font-medium transition-colors"
         >
           <Zap size={13} /> {t(lang, 'superToolsBtn')}
         </button>
@@ -220,7 +220,7 @@ export default function Sidebar({
         {currentUser ? (
           <div className="relative" ref={userMenuRef}>
             <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-md">
+              <div className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center text-xs font-bold text-white">
                 {currentUser.ten_day_du ? currentUser.ten_day_du[0].toUpperCase() : 'U'}
               </div>
               <div className="truncate max-w-[110px]">

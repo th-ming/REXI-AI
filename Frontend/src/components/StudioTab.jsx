@@ -386,7 +386,7 @@ export default function StudioTab({ API_BASE, authToken, showToast }) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+              <div className="w-9 h-9 rounded-xl bg-[var(--accent)] flex items-center justify-center">
               <Volume2 size={18} className="text-white" />
             </div>
             <div>

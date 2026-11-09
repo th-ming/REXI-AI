@@ -68,7 +68,7 @@ export default function WebAnalyzer({ apiFetch: apiFetchProp, showToast }) {
             />
           </div>
           <button onClick={handleAnalyze} disabled={analyzing}
-            className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-lg shadow-cyan-500/20">
+            className="px-5 py-2.5 bg-[var(--accent)] hover:brightness-110 disabled:opacity-50 text-white rounded-xl text-sm font-semibold flex items-center gap-2 transition-colors">
             {analyzing ? <><Loader2 size={16} className="animate-spin" /> {tx(getLang(), 'Đang phân tích...')}</> : <><Search size={16} /> {tx(getLang(), 'Phân Tích')}</>}
           </button>
         </div>

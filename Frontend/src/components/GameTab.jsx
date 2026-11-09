@@ -36,7 +36,7 @@ export default function GameTab({ showToast }) {
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-[#181920] border-b border-white/5 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="w-7 h-7 rounded-lg bg-gradient-to-tr from-fuchsia-500 to-purple-600 flex items-center justify-center shrink-0">
+          <span className="w-7 h-7 rounded-lg bg-[var(--accent)] flex items-center justify-center shrink-0">
             <Gamepad2 size={14} className="text-white" />
           </span>
           <span className="text-xs font-bold text-white whitespace-nowrap">Game Zone</span>
@@ -78,7 +78,7 @@ export default function GameTab({ showToast }) {
 
       {/* Game info strip */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[#14151c] border-b border-white/5 shrink-0">
-        <span className={`w-5 h-5 rounded-md bg-gradient-to-tr ${current.color} flex items-center justify-center`}>
+        <span className={`w-5 h-5 rounded-md bg-[var(--accent)] flex items-center justify-center`}>
           <Monitor size={11} className="text-white" />
         </span>
         <span className="text-[11px] font-semibold text-slate-200">{current.name}</span>

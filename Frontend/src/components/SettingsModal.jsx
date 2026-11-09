@@ -253,7 +253,7 @@ export default function SettingsModal({
 
           <button
             onClick={() => setSettingsOpen(false)}
-            className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+            className="w-full py-2.5 bg-[var(--accent)] hover:brightness-110 text-white font-bold text-sm rounded-xl transition-colors flex items-center justify-center gap-1.5"
           >
             <Zap size={15} /> {t(lang, 'smSave')}
           </button>

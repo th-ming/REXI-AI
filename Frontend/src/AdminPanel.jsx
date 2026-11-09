@@ -68,7 +68,7 @@ function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [onClose]);
   const c = type === 'success' ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-200' : 'bg-rose-900/90 border-rose-500/40 text-rose-200';
   return (
-    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border shadow-2xl text-sm font-medium backdrop-blur ${c}`}>
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium ${c}`}>
       {type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
       {message}
     </div>
@@ -152,12 +152,12 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
   };
 
   const statCards = [
-    { icon: Users, label: t(getLang(), 'Tổng User'), value: stats?.tong_user, bg: 'bg-indigo-500/15', text: 'text-indigo-300', border: 'border-indigo-500/25', glow: 'shadow-indigo-500/5' },
-    { icon: Crown, label: 'Admin', value: stats?.tong_admin, bg: 'bg-amber-500/15', text: 'text-amber-300', border: 'border-amber-500/25', glow: 'shadow-amber-500/5' },
-    { icon: Lock, label: t(getLang(), 'Bị Khoá'), value: stats?.tong_bi_khoa, bg: 'bg-rose-500/15', text: 'text-rose-300', border: 'border-rose-500/25', glow: 'shadow-rose-500/5' },
-    { icon: MessageSquare, label: t(getLang(), 'Hội Thoại'), value: stats?.tong_hoi_thoai, bg: 'bg-cyan-500/15', text: 'text-cyan-300', border: 'border-cyan-500/25', glow: 'shadow-cyan-500/5' },
-    { icon: Activity, label: t(getLang(), 'Tin Nhắn'), value: stats?.tong_tin_nhan, bg: 'bg-emerald-500/15', text: 'text-emerald-300', border: 'border-emerald-500/25', glow: 'shadow-emerald-500/5' },
-    { icon: Trash2, label: t(getLang(), 'Thùng Rác'), value: stats?.tong_xoa_mem, bg: 'bg-slate-500/15', text: 'text-slate-300', border: 'border-slate-500/25', glow: 'shadow-slate-500/5' },
+    { icon: Users, label: t(getLang(), 'Tổng User'), value: stats?.tong_user, bg: 'bg-white/[0.06]', text: 'text-slate-200', border: 'border-white/10' },
+    { icon: Crown, label: 'Admin', value: stats?.tong_admin, bg: 'bg-white/[0.06]', text: 'text-slate-200', border: 'border-white/10' },
+    { icon: Lock, label: t(getLang(), 'Bị Khoá'), value: stats?.tong_bi_khoa, bg: 'bg-white/[0.06]', text: 'text-slate-200', border: 'border-white/10' },
+    { icon: MessageSquare, label: t(getLang(), 'Hội Thoại'), value: stats?.tong_hoi_thoai, bg: 'bg-white/[0.06]', text: 'text-slate-200', border: 'border-white/10' },
+    { icon: Activity, label: t(getLang(), 'Tin Nhắn'), value: stats?.tong_tin_nhan, bg: 'bg-white/[0.06]', text: 'text-slate-200', border: 'border-white/10' },
+    { icon: Trash2, label: t(getLang(), 'Thùng Rác'), value: stats?.tong_xoa_mem, bg: 'bg-white/[0.06]', text: 'text-slate-200', border: 'border-white/10' },
   ];
 
   return (
@@ -167,9 +167,9 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
         {statCards.map((c, i) => (
           <div
             key={i}
-            className={`p-4 bg-[#141622]/80 backdrop-blur-xl rounded-2xl border border-white/8 shadow-lg ${c.glow} flex items-center gap-3.5 hover:-translate-y-0.5 hover:border-white/20 transition-all duration-300 group`}
+            className={`p-4 bg-[#141622] rounded-2xl border border-white/8 flex items-center gap-3.5 hover:border-white/20 transition-colors group`}
           >
-            <div className={`p-2.5 rounded-xl ${c.bg} ${c.text} border ${c.border} group-hover:scale-105 transition-transform duration-300 shrink-0`}>
+            <div className={`p-2.5 rounded-xl ${c.bg} ${c.text} border ${c.border} shrink-0`}>
               <c.icon size={20} />
             </div>
             <div className="min-w-0">
@@ -181,7 +181,7 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
       </div>
 
       {/* Users Table Header & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141622]/60 backdrop-blur-md p-4 rounded-2xl border border-white/8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141622] p-4 rounded-2xl border border-white/8">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
             <Users size={18} />
@@ -203,12 +203,12 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               placeholder={t(getLang(), 'phAdminSearch')}
-              className="pl-9 pr-3 py-2 bg-[#0d0e14] border border-white/10 rounded-xl text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 w-full sm:w-64 transition-all"
+              className="pl-9 pr-3 py-2 bg-[#0d0e14] border border-white/10 rounded-xl text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 w-full sm:w-64 transition-colors"
             />
           </div>
           <button
             type="submit"
-            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs rounded-xl font-bold transition-all shadow-md active:scale-95 shrink-0"
+            className="px-4 py-2 bg-[var(--accent)] hover:brightness-110 text-white text-xs rounded-xl font-bold transition-colors shrink-0"
           >
             {t(getLang(), 'Tìm kiếm')}
           </button>
@@ -217,14 +217,14 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
 
       {/* Users Table */}
       {loading ? (
-        <div className="text-center py-16 text-slate-400 text-sm bg-[#141622]/40 rounded-2xl border border-white/8">
+        <div className="text-center py-16 text-slate-400 text-sm bg-[#141622] rounded-2xl border border-white/8">
           <RefreshCw size={22} className="animate-spin mx-auto mb-2 text-cyan-400" />
           <span>{t(getLang(), 'Đang tải danh sách người dùng...')}</span>
         </div>
       ) : (
-        <div className="bg-[#141622]/90 backdrop-blur-xl rounded-2xl border border-white/8 overflow-hidden shadow-2xl">
+        <div className="bg-[#141622] rounded-2xl border border-white/8 overflow-hidden shadow-2xl">
           <table className="w-full text-sm">
-            <thead className="bg-[#0e0f17]/90 border-b border-white/10">
+            <thead className="bg-[#0e0f17] border-b border-white/10">
               <tr>
                 <th className="px-5 py-3.5 text-left text-[10px] text-slate-400 uppercase font-bold tracking-wider">{t(getLang(), 'Tài khoản')}</th>
                 <th className="px-5 py-3.5 text-left text-[10px] text-slate-400 uppercase font-bold tracking-wider">{t(getLang(), 'Phân Quyền')}</th>
@@ -242,7 +242,7 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
                   <tr key={user.ma_nguoi_dung} className={`hover:bg-white/[0.03] transition-colors ${isBanned ? 'opacity-55' : ''}`}>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500/20 via-indigo-500/20 to-purple-500/20 border border-white/10 flex items-center justify-center text-xs font-bold text-cyan-300 shadow-sm shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-xs font-bold text-[var(--c-accent-soft)] shrink-0">
                           {(user.ten_day_du || user.email || '?')[0].toUpperCase()}
                         </div>
                         <div>
@@ -263,10 +263,10 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
                           <button
                             onClick={() => changeRole(user.ma_nguoi_dung, isAdmin ? 'user' : 'admin')}
                             disabled={actionLoading[`role_${user.ma_nguoi_dung}`]}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                               isAdmin
                                 ? 'bg-slate-500/15 border border-slate-500/30 text-slate-300 hover:bg-slate-500/30'
-                                : 'bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 shadow-sm shadow-amber-500/10'
+                                : 'bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 shadow-sm'
                             }`}
                           >
                             {actionLoading[`role_${user.ma_nguoi_dung}`] ? <Loader2 size={11} className="animate-spin" /> : isAdmin ? t(getLang(), 'Hạ quyền') : t(getLang(), 'Nâng quyền')}
@@ -274,9 +274,9 @@ const UsersTab = memo(function UsersTab({ token, currentUser, showToast, stats, 
                           <button
                             onClick={() => changeStatus(user.ma_nguoi_dung, isBanned ? 'active' : 'banned')}
                             disabled={actionLoading[`status_${user.ma_nguoi_dung}`]}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                               isBanned
-                                ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 shadow-sm shadow-emerald-500/10'
+                                ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
                                 : 'bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
                             }`}
                           >
@@ -401,10 +401,10 @@ const ConversationsTab = memo(function ConversationsTab({ token, showToast }) {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-white flex items-center gap-2"><MessageSquare size={20} className="text-emerald-400" /> {t(getLang(), 'Quản Lý Hội Thoại')}</h2>
         <div className="flex gap-1 bg-[#1e1f20] rounded-xl p-1">
-          <button onClick={() => setConvTab('all')} className={`px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${convTab === 'all' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+          <button onClick={() => setConvTab('all')} className={`px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${convTab === 'all' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
             {t(getLang(), 'Tất cả')} ({convs.length})
           </button>
-          <button onClick={() => setConvTab('trash')} className={`px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${convTab === 'trash' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'text-slate-400 hover:text-white'}`}>
+          <button onClick={() => setConvTab('trash')} className={`px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${convTab === 'trash' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'text-slate-400 hover:text-white'}`}>
             {t(getLang(), '🗑️ Thùng rác')} ({trashConvs.length})
           </button>
         </div>
@@ -449,7 +449,7 @@ const ConversationsTab = memo(function ConversationsTab({ token, showToast }) {
                     const isUser = m.vai_tro === 'user';
                     const isAdmin = m.vai_tro === 'admin';
                     return (
-                      <div key={m.ma_tin_nhan} className={`flex flex-col p-3 rounded-xl border transition-all ${
+                      <div key={m.ma_tin_nhan} className={`flex flex-col p-3 rounded-xl border transition-colors ${
                         isUser
                           ? 'bg-cyan-500/5 border-cyan-500/10 text-cyan-200'
                           : isAdmin
@@ -684,7 +684,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
           </h2>
           {lastFullScan && (
             <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
               {t(getLang(), 'Quét lần cuối: ')}{formatTime(lastFullScan)}
             </p>
           )}
@@ -747,7 +747,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
           <button
             type="button"
             onClick={() => !scanningAll && scanAll()}
-            className={`px-3.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-cyan-500/10 transition-all ${scanningAll ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`px-3.5 py-1.5 bg-[var(--accent)] hover:brightness-110 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${scanningAll ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {scanningAll ? <RefreshCw size={12} className="animate-spin" /> : <Radar size={12} />}
             {scanningAll ? t(getLang(), 'Đang quét...') : t(getLang(), 'Quét Tất Cả')}
@@ -756,7 +756,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
       </div>
 
       {/* Box Thêm / Lưu Key */}
-      <div className="bg-[#141622]/80 backdrop-blur-xl rounded-2xl border border-white/8 p-4 shadow-xl">
+      <div className="bg-[#141622] rounded-2xl border border-white/8 p-4 shadow-xl">
         <h3 className="text-xs font-bold text-amber-400 mb-3 flex items-center gap-2">
           <Plus size={14} className="text-amber-400" /> {t(getLang(), 'Thêm / Cập Nhật API Key Mới')}
         </h3>
@@ -764,7 +764,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
           <select
             value={newProvider}
             onChange={e => setNewProvider(e.target.value)}
-            className="px-3.5 py-2 bg-[#0d0e14] border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-cyan-500/50 transition-all font-medium"
+            className="px-3.5 py-2 bg-[#0d0e14] border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-cyan-500/50 transition-colors font-medium"
           >
             <option value="gemini">Google Gemini</option>
             <option value="openai">OpenAI</option>
@@ -793,12 +793,12 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
             onChange={e => setNewKey(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && saveKey()}
             placeholder={t(getLang(), 'phAdminKey')}
-            className="flex-1 min-w-[220px] px-3.5 py-2 bg-[#0d0e14] border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-amber-500/50 font-mono transition-all"
+            className="flex-1 min-w-[220px] px-3.5 py-2 bg-[#0d0e14] border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-amber-500/50 font-mono transition-colors"
           />
 
           <button
             onClick={saveKey}
-            className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 shrink-0"
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors shrink-0"
           >
             {t(getLang(), 'Lưu Key')}
           </button>
@@ -815,7 +815,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-slate-400 text-xs bg-[#141622]/40 rounded-2xl border border-white/8">
+          <div className="text-center py-12 text-slate-400 text-xs bg-[#141622] rounded-2xl border border-white/8">
             <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-cyan-400" />
             <span>{t(getLang(), 'Đang tải danh sách nhà cung cấp...')}</span>
           </div>
@@ -831,7 +831,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
               const key = keys.find(k => k.ten_nha_cung_cap === providerId);
 
               return (
-                <div key={providerId} className="bg-[#141622]/80 backdrop-blur-xl rounded-2xl border border-white/8 overflow-hidden shadow-lg hover:border-white/15 transition-all duration-300">
+                <div key={providerId} className="bg-[#141622] rounded-2xl border border-white/8 overflow-hidden hover:border-white/15 transition-colors duration-300">
                   {/* Provider Header Row */}
                   <div className="flex items-center justify-between px-4 py-3 bg-[#10111a]/80">
                     <div
@@ -852,7 +852,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
                       {totalModels > 0 && (
                         <div className="flex items-center gap-1.5 text-[10px]">
                           <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]"></span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                             {cache.working.length} OK
                           </span>
                           {cache.failed.length > 0 && (
@@ -878,7 +878,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
                       <button
                         type="button"
                         onClick={() => !isScanning && scanSingleProvider(providerId)}
-                        className={`px-3 py-1 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded-xl text-[10px] font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-sm ${isScanning ? 'opacity-50' : ''}`}
+                        className={`px-3 py-1 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded-xl text-[10px] font-bold flex items-center gap-1.5 transition-colors shadow-sm ${isScanning ? 'opacity-50' : ''}`}
                       >
                         {isScanning ? <RefreshCw size={10} className="animate-spin text-cyan-300" /> : <Search size={10} className="text-cyan-300" />}
                         {isScanning ? t(getLang(), 'Đang quét...') : t(getLang(), 'Quét')}
@@ -911,7 +911,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
                             {cache.working.map(m => (
                               <div key={m.ma_model} className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 text-xs transition-colors">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] shrink-0"></span>
+                                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
                                   <span className="font-mono text-slate-200 truncate">{m.ma_model}</span>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
@@ -957,7 +957,7 @@ const ApiKeysTab = memo(function ApiKeysTab({ token, showToast }) {
             })}
 
             {providerIdsWithKeys.length === 0 && (
-              <div className="text-center py-8 text-slate-500 text-xs bg-[#141622]/80 backdrop-blur-xl rounded-2xl border border-white/8">
+              <div className="text-center py-8 text-slate-500 text-xs bg-[#141622] rounded-2xl border border-white/8">
                 {t(getLang(), 'Chưa có API Key nào được cấu hình. Thêm key ở phía trên.')}
               </div>
             )}
@@ -1020,7 +1020,7 @@ const SkillsTab = memo(function SkillsTab({ token, showToast }) {
           {skills.map(s => {
             const isActive = s.trang_thai === 'kich_hoat';
             return (
-              <div key={s.ma_ky_nang} className={`p-3 bg-[#181920] rounded-xl border transition-all ${
+              <div key={s.ma_ky_nang} className={`p-3 bg-[#181920] rounded-xl border transition-colors ${
                 isActive ? 'border-purple-500/30 hover:border-purple-400/50' : 'border-white/5 opacity-50 hover:opacity-75'
               }`}>
                 <div className="flex items-start justify-between gap-2">
@@ -1033,7 +1033,7 @@ const SkillsTab = memo(function SkillsTab({ token, showToast }) {
                     onClick={() => toggleSkill(s)}
                     disabled={toggling === s.ma_ky_nang}
                     title={isActive ? (getLang() === 'vi' ? 'Tắt kỹ năng này' : 'Disable this skill') : (getLang() === 'vi' ? 'Bật kỹ năng này' : 'Enable this skill')}
-                    className={`shrink-0 w-10 h-5 rounded-full transition-all relative ${
+                    className={`shrink-0 w-10 h-5 rounded-full transition-colors relative ${
                       toggling === s.ma_ky_nang ? 'opacity-50' : ''
                     } ${isActive ? 'bg-purple-500' : 'bg-white/10'}`}
                   >
@@ -1776,7 +1776,7 @@ const RoutingTab = memo(function RoutingTab({ token, showToast }) {
             <div key={p.provider} className="flex items-center gap-3 text-xs">
               <span className="w-28 font-semibold text-slate-200 uppercase">{p.provider}</span>
               <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full" style={{ width: `${Math.min(100, Math.round((p.count / Math.max(1, Math.max(...providers.map(x => x.count || 0)))) * 100))}%` }} />
+                <div className="h-full bg-[var(--accent)] rounded-full" style={{ width: `${Math.min(100, Math.round((p.count / Math.max(1, Math.max(...providers.map(x => x.count || 0)))) * 100))}%` }} />
               </div>
               <span className="w-10 text-right text-slate-300">{p.count}</span>
               <span className="w-16 text-right text-slate-500">{p.avgMs}ms</span>
@@ -1894,14 +1894,14 @@ export default function AdminPanel(props) {
   return (
     <div className="flex h-full w-full bg-[#0b0c10] text-slate-100 font-sans relative z-10 overflow-hidden">
       {/* Sleek Integrated Sub-Nav Sidebar */}
-      <aside className="flex flex-col bg-[#0d0e14]/90 backdrop-blur-2xl border-r border-white/8 w-52 shrink-0 transition-all duration-300">
+      <aside className="flex flex-col bg-[#0d0e14] border-r border-white/8 w-52 shrink-0 transition-all duration-300">
         <div className="p-4 border-b border-white/8 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-sm shadow-amber-500/10">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-sm">
               <Shield size={18} />
             </div>
             <div>
-              <h1 className="text-xs font-bold bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 bg-clip-text text-transparent">Admin Hub</h1>
+              <h1 className="text-xs font-bold text-white">Admin Hub</h1>
               <p className="text-[9px] text-slate-500 font-medium tracking-wide">Rexi AI OS v2.0</p>
             </div>
           </div>
@@ -1914,9 +1914,9 @@ export default function AdminPanel(props) {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all duration-200 ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
                   isActive
-                    ? 'bg-gradient-to-r from-cyan-500/15 via-indigo-500/15 to-purple-500/15 text-cyan-300 border border-cyan-500/30 font-bold shadow-sm shadow-cyan-500/10 translate-x-0.5'
+                    ? 'bg-[var(--accent)]/15 text-[var(--c-accent-soft)] border border-[var(--accent)]/30 font-bold'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 font-medium'
                 }`}
               >
@@ -1930,7 +1930,7 @@ export default function AdminPanel(props) {
         <div className="p-3 border-t border-white/8 bg-[#0a0b0e]/60">
           <button
             onClick={() => onClose && onClose()}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors"
           >
             <Home size={14} className="text-cyan-400" />
             <span>{t(getLang(), 'Về trang chủ')}</span>
@@ -1939,8 +1939,8 @@ export default function AdminPanel(props) {
       </aside>
 
       {/* Main Glassmorphism Display Area */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-[#0b0c10] via-[#0e0f17] to-[#0a0b10]">
-        <header className="h-14 px-6 border-b border-white/8 flex items-center justify-between bg-[#0d0e14]/70 backdrop-blur-xl shrink-0">
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#0b0c10]">
+        <header className="h-14 px-6 border-b border-white/8 flex items-center justify-between bg-[#0d0e14] shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="text-xs font-bold text-slate-400">{t(getLang(), 'Bảng điều khiển')}</span>
             <span className="text-xs text-slate-600">/</span>
@@ -1956,7 +1956,7 @@ export default function AdminPanel(props) {
             <button
               onClick={() => fetchStats()}
               title={t(getLang(), 'tipRefresh')}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-slate-400 hover:text-white transition-all active:scale-95"
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-slate-400 hover:text-white transition-colors"
             >
               <RefreshCw size={14} className={statsLoading ? 'animate-spin text-cyan-400' : ''} />
             </button>
@@ -1965,7 +1965,7 @@ export default function AdminPanel(props) {
               <button
                 onClick={onClose}
                 title={t(getLang(), 'tipCloseAdmin')}
-                className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 border border-white/5 text-slate-400 hover:text-rose-300 transition-all active:scale-95"
+                className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 border border-white/5 text-slate-400 hover:text-rose-300 transition-colors"
               >
                 <X size={14} />
               </button>

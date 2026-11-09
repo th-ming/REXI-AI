@@ -6,7 +6,7 @@ const translations = {
     exportMd: 'Xuất Markdown',
     ttsBrowser: 'Trình duyệt (miễn phí)',
     ttsServer: 'Server (edge-tts chất lượng cao)',
-    fast: '⚡ Nhanh (Standard)',
+    fast: 'Nhanh (Standard)',
     deep: '🧠 Suy Luận Sâu (Deep Think)',
     guestMode: 'Chế độ Khách',
     login: 'Đăng nhập →',

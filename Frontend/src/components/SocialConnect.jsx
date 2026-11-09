@@ -155,7 +155,7 @@ export default function SocialConnect({ showToast }) {
                   type="button"
                   onClick={() => post(p)}
                   disabled={posting[p]}
-                  className="text-[11px] font-medium text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-all"
+                  className="text-[11px] font-medium text-white bg-[var(--accent)] hover:brightness-110 disabled:opacity-50 rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
                 >
                   {posting[p] ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />} {t(lang, 'Đăng')}
                 </button>

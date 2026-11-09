@@ -484,7 +484,7 @@ export default function TikTokFeedTab({ showToast, active }) {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => loadFeed(false)} disabled={loading}
-                className="ml-auto px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+                className="ml-auto px-3 py-1.5 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
               >
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Tải lại
               </button>
@@ -531,7 +531,7 @@ export default function TikTokFeedTab({ showToast, active }) {
               <>
                 <button
                   onClick={startQr} disabled={dangMoQr}
-                  className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 text-white text-xs font-medium disabled:opacity-50"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white text-xs font-medium disabled:opacity-50"
                 >
                   {dangMoQr ? 'Đang mở mã...' : 'Đăng nhập bằng QR'}
                 </button>

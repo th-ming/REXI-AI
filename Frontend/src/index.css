@@ -148,11 +148,7 @@ select {
 /* ── Rexi Logo Hover Effect ── */
 .rexi-logo {
   filter: brightness(0) invert(1);
-  transition: transform 0.3s ease;
   cursor: pointer;
-}
-.rexi-logo:hover {
-  transform: scale(1.05);
 }
 
 /* Con mèo KHÔNG phát sáng (dùng trong tin nhắn chat) */
@@ -180,11 +176,7 @@ select {
 }
 .rexi-rise { animation: rexi-rise .55s var(--ease-out) both; }
 
-@keyframes rexi-float-y {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-7px); }
-}
-.rexi-hero-logo { animation: rexi-float-y 4.5s ease-in-out infinite; }
+.rexi-hero-logo { animation: none; }
 
 /* Tiêu đề hero — bỏ gradient chạy, dùng 1 màu mực */
 .rexi-grad-text {
@@ -264,10 +256,10 @@ select {
 
 /* Nút "Cuộc Trò Chuyện Mới" + ô conv active: nền SÁNG chỉ sáng hơn ở theme sáng */
 [data-theme="light"] .btn-new-conv {
-  background-image: linear-gradient(90deg, #3b82f6, #2f62e8) !important;
-  box-shadow: 0 2px 8px rgba(47, 98, 232, .25);
+  background-image: none !important;
+  background-color: var(--accent) !important;
 }
-[data-theme="light"] .btn-new-conv:hover { filter: brightness(1.06); }
+[data-theme="light"] .btn-new-conv:hover { background-color: var(--accent-deep) !important; }
 [data-theme="light"] .conv-item.conv-active {
   background-color: rgba(47, 98, 232, .1);
   border-color: rgba(47, 98, 232, .35);
@@ -1010,7 +1002,7 @@ select {
 
 /* ============ Model Selector - 2 theme (rexi-ms-*) ============ */
 .rexi-ms-trigger {
-  background-image: linear-gradient(to right, #181a20, #15161c, #121318);
+  background-color: #181a20;
   color: #e2e8f0;
 }
 .rexi-ms-trigger .text-cyan-100 { color: #cffafe; }
@@ -1020,7 +1012,7 @@ select {
 .rexi-ms-foot { background-color: #0e0f15; }
 
 [data-theme='light'] .rexi-ms-trigger {
-  background-image: linear-gradient(to right, #ffffff, #f1f5f9);
+  background-color: #ffffff;
   color: #334155;
 }
 [data-theme='light'] .rexi-ms-trigger .text-cyan-100 { color: #155e75; }
@@ -1058,76 +1050,54 @@ select {
 /* ============ rexi-dark-modern — UI upgrade cho dark mode ============ */
 /* Nền tổng: layered gradient + ambient glow thay mặt đen phẳng */
 [data-theme="dark"] body {
-  background:
-    radial-gradient(1100px 520px at 12% -8%, rgba(111, 139, 255, 0.08), transparent 62%),
-    radial-gradient(900px 480px at 88% 108%, rgba(56, 189, 248, 0.06), transparent 60%),
-    linear-gradient(180deg, #0c0d10 0%, #10131a 100%);
-  background-attachment: fixed;
+  background: var(--bg-main);
 }
 
-/* Controls (#131417): gradient kính + viền sáng, hover glow */
+/* Controls (#131417): surface phẳng + hairline, hover chỉ đổi viền */
 [data-theme="dark"] .bg-\[\#131417\] {
-  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012) 55%);
-  background-color: #16181e;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background-color: #1b1e25;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 0.15s ease;
 }
 [data-theme="dark"] .bg-\[\#131417\]:hover {
-  border-color: rgba(111, 139, 255, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 3px rgba(111, 139, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
-/* Cards (#181920): gradient dọc + viền mềm */
+/* Cards (#181920): surface phẳng + viền mềm */
 [data-theme="dark"] .bg-\[\#181920\] {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.008) 60%);
-  background-color: #181a20;
+  background-color: #1e2129;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-/* Welcome tiles: gradient + hover lift + glow (target combo tile) */
+/* Welcome tiles: surface phẳng, hover chỉ nâng nhẹ + hairline sáng hơn */
 [data-theme="dark"] .bg-\[\#1e1f20\].border-white\/\[0\.06\] {
-  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.006) 45%, rgba(111, 139, 255, 0.07));
-  background-color: #191b21;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  background-color: #2f3542;
+  transition: transform 0.18s ease, border-color 0.18s ease;
 }
 [data-theme="dark"] .bg-\[\#1e1f20\].border-white\/\[0\.06\]:hover {
-  transform: translateY(-2px);
-  border-color: rgba(111, 139, 255, 0.4);
-  box-shadow: 0 10px 28px -10px rgba(111, 139, 255, 0.3), 0 0 0 1px rgba(111, 139, 255, 0.1);
-}
-[data-theme="dark"] .bg-\[\#1e1f20\].border-white\/\[0\.06\]:hover .bg-white\/\[0\.04\] {
-  background-image: linear-gradient(135deg, rgba(111, 139, 255, 0.3), rgba(56, 189, 248, 0.14));
-  color: #dbe4ff;
-  border-color: rgba(111, 139, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
-/* Assistant bubble: cạnh trên sáng nhẹ cho cảm giác nổi */
+/* Assistant bubble: surface phẳng */
 [data-theme="dark"] .prose-rexi.bg-\[\#1e1f20\] {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.004) 55%);
-  background-color: #1a1c21;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background-color: #21242c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-/* Ô chat pill: focus glow accent */
+/* Ô chat pill: focus chỉ đổi viền accent (không glow) */
 [data-theme="dark"] .bg-\[\#1e1f20\].rounded-full:focus-within {
   border-color: rgba(111, 139, 255, 0.5);
-  box-shadow: 0 0 0 3px rgba(111, 139, 255, 0.12), 0 4px 20px -6px rgba(111, 139, 255, 0.2);
 }
 
-/* Nút primary (cyan): glow màu thay phẳng */
+/* Nút primary (cyan): phẳng, không glow */
 [data-theme="dark"] .bg-cyan-600 {
-  box-shadow: 0 4px 16px -4px rgba(8, 145, 178, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-}
-[data-theme="dark"] .bg-cyan-600:hover {
-  box-shadow: 0 6px 22px -4px rgba(8, 145, 178, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
-/* Dropdown menu (#141522): glass mờ + shadow sâu */
+/* Dropdown menu (#141522): surface phẳng + shadow sâu */
 [data-theme="dark"] .bg-\[\#141522\] {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.006));
-  background-color: rgba(20, 22, 34, 0.92);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background-color: #171928;
+  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.6);
 }
 
 /* Container chính (#0d0e11): trong suốt nhẹ để lộ ambient bg */
@@ -1166,10 +1136,7 @@ select {
 /* C. DARK — nang sang tong the (het den dac) */
 [data-theme="dark"] { --bg-main: #16181d; --bg-sidebar: #1d2026; --bg-card: #23262c; --bg-card-hover: #2b2f36; --text-sub: #a7acb8; }
 [data-theme="dark"] body {
-  background:
-    radial-gradient(1100px 520px at 12% -8%, rgba(111, 139, 255, 0.10), transparent 62%),
-    radial-gradient(900px 480px at 88% 108%, rgba(56, 189, 248, 0.08), transparent 60%),
-    linear-gradient(180deg, #14161c 0%, #181c24 100%);
+  background: var(--bg-main);
 }
 [data-theme="dark"] .bg-\[\#131417\] { background-color: #1b1e25; }
 [data-theme="dark"] .bg-\[\#181920\] { background-color: #1e2129; }

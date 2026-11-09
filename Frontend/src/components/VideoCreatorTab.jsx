@@ -583,7 +583,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
               <button
                 key={f.id}
                 onClick={() => setFormat(f.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
                   format === f.id
                     ? 'bg-[#4a7dff]/20 text-[#4a7dff] border border-[#4a7dff]/30'
                     : 'text-slate-800 hover:text-slate-900 hover:bg-slate-100'
@@ -601,7 +601,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
             <button
               key={d}
               onClick={() => setDuration(d)}
-              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
                 duration === d
                   ? 'bg-[#4a7dff]/20 text-[#4a7dff] border border-[#4a7dff]/30'
                   : 'text-slate-800 hover:text-slate-900 hover:bg-slate-100'
@@ -621,7 +621,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                 {i > 0 && <div className={`w-8 h-px ${step > s.n ? 'bg-[#4a7dff]/60' : 'bg-slate-200/10'}`} />}
                 <button
                   onClick={() => s.n < step && setStep(s.n)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
                     step === s.n
                       ? 'bg-[#4a7dff]/15 text-[#4a7dff] border border-[#4a7dff]/30'
                       : step > s.n
@@ -703,7 +703,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                 <button
                   onClick={handleAiVideo}
                   disabled={aiBusy}
-                  className={`px-5 py-2 rounded-lg text-xs font-bold text-white shadow transition-all active:scale-95 ${aiBusy ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff]'}`}
+                  className={`px-5 py-2 rounded-lg text-xs font-bold text-white transition-colors ${aiBusy ? 'bg-slate-400 cursor-not-allowed' : 'bg-[var(--accent)] hover:brightness-110'}`}
                 >
                   {aiBusy ? T(getLang(), 'Đang tạo...') : T(getLang(), 'Tạo video AI')}
                 </button>
@@ -719,7 +719,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                   <button
                     key={c.id}
                     onClick={() => setCategory(c.id)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-medium transition-all ${
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-medium transition-colors ${
                       category === c.id
                         ? 'bg-[#4a7dff]/15 text-[#4a7dff] border border-[#4a7dff]/30'
                         : 'bg-slate-50 text-slate-800 border border-slate-200 hover:text-slate-900 hover:border-slate-300'
@@ -741,7 +741,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                   <button
                     key={t.id}
                     onClick={() => openPreview(t)}
-                    className={`group rounded-2xl overflow-hidden border transition-all text-left active:scale-[0.98] ${
+                    className={`group rounded-2xl overflow-hidden border transition-colors text-left active:scale-[0.98] ${
                       selectedTemplate.id === t.id
                         ? 'border-[#4a7dff]/60 ring-2 ring-[#4a7dff]/30 shadow-lg shadow-[#4a7dff]/10'
                         : 'border-slate-200 hover:border-[#4a7dff]/40 hover:shadow-lg hover:shadow-[#4a7dff]/5'
@@ -782,7 +782,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
 <div className="flex justify-center mt-6">
                <button
                  onClick={() => setStep(2)}
-                 className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff] text-white font-bold text-sm shadow-lg shadow-[4a7dff]/20 transition-all flex items-center gap-2 active:scale-95"
+                 className="px-8 py-3 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white font-bold text-sm transition-colors flex items-center gap-2"
                >
                  {T(getLang(), 'Chọn mẫu này')} <ArrowRight size={16} />
                </button>
@@ -813,16 +813,16 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                      value={fields[f.key] ?? T(getLang(), f.default)}
                      onChange={e => updateField(f.key, e.target.value)}
                      placeholder={T(getLang(), f.placeholder)}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-500 outline-none focus:border-[#4a7dff]/50 focus:ring-2 focus:ring-[4a7dff]/10 transition-all"
+                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-500 outline-none focus:border-[#4a7dff]/50 focus:ring-2 focus:ring-[4a7dff]/10 transition-colors"
                    />
                  </div>
                ))}
             </div>
 <div className="flex justify-between mt-6">
-               <button onClick={() => setStep(1)} className="px-5 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-all flex items-center gap-2 active:scale-95">
+               <button onClick={() => setStep(1)} className="px-5 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-colors flex items-center gap-2">
                  <ArrowLeft size={14} /> {T(getLang(), 'Quay lại')}
                </button>
-               <button onClick={() => setStep(3)} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff] text-white text-xs font-bold shadow-lg shadow-[4a7dff]/20 transition-all flex items-center gap-2 active:scale-95">
+               <button onClick={() => setStep(3)} className="px-6 py-2.5 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white text-xs font-bold transition-colors flex items-center gap-2">
                  {T(getLang(), 'Xem trước')} <ArrowRight size={14} />
                </button>
              </div>
@@ -873,7 +873,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                      <p className="text-sm font-bold text-emerald-300">{T(getLang(), 'Video đã render xong!')}</p>
                      <p className="text-[10px] text-slate-500">{T(getLang(), selectedFormat.label)} • {selectedFormat.w}×{selectedFormat.h} • {(videoSize / 1024 / 1024).toFixed(1)}MB</p>
                    </div>
-                   <button onClick={handleDownload} className="px-5 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-500/30 transition-all active:scale-95">
+                   <button onClick={handleDownload} className="px-5 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-500/30 transition-colors">
                      <Download size={14} /> {T(getLang(), 'Tải MP4')}
                    </button>
                  </div>
@@ -883,7 +883,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                    <button
                      onClick={handleRender}
                      disabled={rendering}
-                     className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff] text-white font-bold text-sm shadow-lg shadow-[4a7dff]/20 disabled:opacity-50 transition-all flex items-center gap-2 active:scale-95"
+                     className="px-8 py-3 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white font-bold text-sm disabled:opacity-50 transition-colors flex items-center gap-2"
                    >
                      {rendering ? <Loader2 size={16} className="animate-spin" /> : <Video size={16} />}
                      {rendering ? T(getLang(), 'Đang render...') : T(getLang(), 'Render MP4')}
@@ -912,13 +912,13 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
              <div className="mt-5 space-y-2.5">
                <button
                  onClick={handleDownload}
-                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 active:scale-95"
+                 className="w-full py-3.5 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
                >
                  <Download size={16} /> {T(getLang(), 'Tải video MP4')}
                </button>
                <button
                  onClick={startOver}
-                 className="w-full py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-all active:scale-95"
+                 className="w-full py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-colors"
                >
                  {T(getLang(), 'Tạo video khác')}
                </button>
@@ -949,7 +949,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
              </div>
              <button
                onClick={() => { if (advHtml.trim()) setHtml(advHtml); setStep(3); }}
-               className="self-end px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff] text-white text-xs font-bold shadow-lg shadow-[4a7dff]/20 transition-all active:scale-95"
+               className="self-end px-4 py-2.5 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white text-xs font-bold transition-colors"
              >
                {T(getLang(), 'Dùng code này')}
              </button>
@@ -967,7 +967,7 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
                  <h3 className="text-sm font-bold text-slate-800">{T(getLang(), previewTemplate.name)}</h3>
                  <p className="text-[10px] text-slate-500">{T(getLang(), previewTemplate.desc)}</p>
                </div>
-               <button onClick={() => setPreviewTemplate(null)} className="w-8 h-8 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-800 transition-all">
+               <button onClick={() => setPreviewTemplate(null)} className="w-8 h-8 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-800 transition-colors">
                  ✕
                </button>
              </div>
@@ -986,10 +986,10 @@ export default function VideoCreatorTab({ API_BASE, authToken, showToast }) {
              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200">
                <p className="text-[10px] text-slate-500">{T(getLang(), 'Thời lượng: ')}{duration}s • {T(getLang(), selectedFormat.label)} ({selectedFormat.w}×{selectedFormat.h})</p>
                <div className="flex gap-2">
-                 <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-300 text-xs font-semibold transition-all">
+                 <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-300 text-xs font-semibold transition-colors">
                    {T(getLang(), 'Đóng')}
                  </button>
-                 <button onClick={() => pickTemplate(previewTemplate)} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#4a7dff] to-[#3d6ae6] hover:from-[#3d6ae6] hover:to-[#4a7dff] text-white text-xs font-bold shadow-lg shadow-[4a7dff]/20 transition-all flex items-center gap-1.5">
+                 <button onClick={() => pickTemplate(previewTemplate)} className="px-5 py-2 rounded-xl bg-[var(--accent)] hover:brightness-110 text-white text-xs font-bold transition-colors flex items-center gap-1.5">
                    {T(getLang(), 'Chọn mẫu này')} <ArrowRight size={14} />
                  </button>
                </div>

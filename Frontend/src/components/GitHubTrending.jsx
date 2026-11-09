@@ -99,7 +99,7 @@ function RepoCard({ repo, index, isStarred, onStarRepo, starringKey, speakingKey
 
           {/* AI Summary */}
           {repo.ai_summary && (
-            <div className="ml-7 mb-2 px-3 py-2 rounded-lg bg-gradient-to-r from-purple-500/8 to-cyan-500/8 border border-purple-500/15">
+                  <div className="ml-7 mb-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/10">
               <div className="flex items-center gap-1.5 mb-1">
                 <Sparkles size={11} className="text-purple-400" />
                 <span className="text-[10px] font-semibold text-purple-300 uppercase tracking-wider">{T(getLang(), 'AI Tóm Tắt')}</span>
@@ -386,7 +386,7 @@ function RepoDetailModal({ repo, token, onClose }) {
           {!loading && !error && tab === 'readme' && (
             <div>
               {detail?.ai_summary && (
-                <div className="mb-3 px-3 py-2 rounded-lg bg-gradient-to-r from-purple-500/10 to-cyan-500/10 border border-purple-500/15">
+                <div className="mb-3 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/10">
                   <div className="flex items-center gap-1.5 mb-1"><Sparkles size={11} className="text-purple-400" /><span className="text-[10px] font-semibold text-purple-300 uppercase tracking-wider">{T(getLang(), 'AI Tóm Tắt')}</span></div>
                   <p className="text-[12px] text-slate-200">{detail.ai_summary}</p>
                 </div>

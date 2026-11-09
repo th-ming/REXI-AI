@@ -185,7 +185,7 @@ export default function ImageGenTab({ API_BASE, authToken, showToast, imageModel
       {loading && (
         <div className="flex flex-col items-center justify-center py-10 text-slate-400 space-y-3">
           <div className="relative w-40 h-40 rounded-2xl bg-[#131416] border border-white/10 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-indigo-500/10 to-transparent animate-pulse" />
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-pulse" />
             <div className="absolute inset-0 flex items-center justify-center">
               <Loader2 size={28} className="animate-spin text-indigo-400" />
             </div>

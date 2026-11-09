@@ -754,7 +754,7 @@ showToast, active }) {
                         {h.thumb ? (
                           <img src={h.thumb} alt={h.title} className="w-full h-full object-cover" loading="lazy" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-red-900/40 to-[#181920]">
+                          <div className="w-full h-full flex items-center justify-center bg-[#181920]">
                             <Play size={18} className="text-slate-600" />
                           </div>
                         )}
@@ -799,7 +799,7 @@ showToast, active }) {
                       {v.thumb ? (
                         <img src={v.thumb} alt={v.title} className="w-full h-full object-cover group-hover:scale-105 group-hover:rounded-none transition-all duration-300" loading="lazy" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-red-900/40 to-[#181920]">
+                        <div className="w-full h-full flex items-center justify-center bg-[#181920]">
                           <Play size={28} className="text-slate-600" />
                         </div>
                       )}
@@ -989,7 +989,7 @@ showToast, active }) {
                 <div className="px-4 pb-3 space-y-3.5">
                   {/* Ô gửi bình luận local của app (không cần Google OAuth) */}
                   <div className="flex gap-2.5 items-start pb-1">
-                    <span className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                    <span className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
                       B
                     </span>
                     <div className="flex-1 min-w-0">
@@ -1018,7 +1018,7 @@ showToast, active }) {
                       {c.avatar ? (
                         <img src={c.avatar} alt={c.author} loading="lazy" className="w-8 h-8 rounded-full object-cover shrink-0" />
                       ) : (
-                        <span className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                        <span className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
                           {String(c.author || (getLang() === 'en' ? 'A' : 'Ẩ')).trim().charAt(0).toUpperCase()}
                         </span>
                       )}
@@ -1043,7 +1043,7 @@ showToast, active }) {
                 <div className="px-4 pb-3">
                   {/* Ô gửi ngay cả khi chưa có bình luận nào */}
                   <div className="flex gap-2.5 items-start mb-2">
-                    <span className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                    <span className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
                       B
                     </span>
                     <div className="flex-1 min-w-0">
@@ -1072,7 +1072,7 @@ showToast, active }) {
               {/* Kết quả tóm tắt */}
               {summary && summary.summary && (
                 <div className="mt-4 rounded-2xl bg-[#181920] border border-red-500/20 overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-red-600/15 to-rose-600/10 border-b border-white/5">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 border-b border-white/5">
                     <Sparkles size={14} className="text-red-400" />
                     <span className="text-[11px] font-bold text-white flex-1">{t(getLang(), 'Tóm tắt AI')} — {summary.title}</span>
                     {summary.transcript && (
@@ -1142,7 +1142,7 @@ showToast, active }) {
                       {v.thumb ? (
                         <img src={v.thumb} alt={v.title} className="w-full h-full object-cover" loading="lazy" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-red-900/40 to-[#181920]">
+                        <div className="w-full h-full flex items-center justify-center bg-[#181920]">
                           <Play size={20} className="text-slate-600" />
                         </div>
                       )}

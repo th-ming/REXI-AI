@@ -139,9 +139,9 @@ export default function HelpModal({ helpOpen, setHelpOpen }) {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{backgroundColor:'rgba(0,0,0,.10)', transition:'background-color .2s'}} onClick={() => setHelpOpen(false)}>
       <div className="rexi-lightfix bg-white border border-slate-200 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-gradient-to-r from-cyan-500/10 via-indigo-500/10 to-purple-500/10">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-white/[0.02]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+              <div className="w-9 h-9 rounded-xl bg-[var(--accent)] flex items-center justify-center">
               <BookOpen size={18} className="text-white" />
             </div>
             <div>
