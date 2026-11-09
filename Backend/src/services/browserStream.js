@@ -454,7 +454,7 @@ class BrowserStreamService {
           if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') continue;
           const r = el.getBoundingClientRect();
           if (r.width < 2 || r.height < 2) continue;
-          if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+          const onScreen = r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
           let label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.value ||
             el.innerText || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\s+/g, ' ');
           if (label.length > 60) label = label.slice(0, 60);
@@ -466,10 +466,13 @@ class BrowserStreamService {
             name: el.getAttribute('name') || '',
             x: Math.round(r.left + r.width / 2),
             y: Math.round(r.top + r.height / 2),
+            onScreen,
           });
-          if (out.length >= max) break;
+          if (out.length >= max * 3) break;
         }
-        return out;
+        // Ưu tiên phần tử đang hiển thị lên trước (Playwright tự cuộn tới khi click phần tử ngoài màn hình)
+        out.sort((a, b) => (b.onScreen ? 1 : 0) - (a.onScreen ? 1 : 0));
+        return out.slice(0, max);
       }, max);
     } catch { return []; }
   }
@@ -524,6 +527,24 @@ class BrowserStreamService {
     const searchMatch = trimmed.match(/^(?:search|tìm kiếm|tìm|google)\s+(.+)$/i);
     if (searchMatch) {
       return goto('https://www.google.com/search?q=' + encodeURIComponent(searchMatch[1].trim()));
+    }
+
+    // 2b) Cuộn tới đầu/cuối trang bằng heuristic (không cần LLM) — trả về nội dung tại vị trí đó
+    if (/(cuối trang|dưới cùng|xuống hết|bottom|kéo xuống cuối)/i.test(trimmed)) {
+      try {
+        await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await this.page.waitForTimeout(500);
+        const t = await this.readText(4000);
+        return { success: true, result: { message: 'Đã cuộn xuống cuối trang.', url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText } };
+      } catch (e) { /* ignore, xử lý chung bên dưới */ }
+    }
+    if (/(đầu trang|trên cùng|lên đầu|top|kéo lên đầu)/i.test(trimmed)) {
+      try {
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+        await this.page.waitForTimeout(400);
+        const t = await this.readText(4000);
+        return { success: true, result: { message: 'Đã cuộn lên đầu trang.', url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText } };
+      } catch (e) { /* ignore */ }
     }
 
     // 3) Lệnh điều khiển phức tạp → Groq LLM dịch thành hành động rồi thực thi bằng Playwright
