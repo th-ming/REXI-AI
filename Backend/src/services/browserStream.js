@@ -30,7 +30,7 @@ class BrowserStreamService {
     this._screencastOn = false;
     this._screencastHandler = null;
     this._fallbackInterval = null;
-    this.streamOpts = { quality: 45, maxWidth: 960, maxHeight: 540, fps: 15 };
+    this.streamOpts = { quality: 45, maxWidth: 960, maxHeight: 540, fps: 15, everyNthFrame: 1 };
     this._lastFrameTs = 0;
     this._droppedFrames = 0;
     this._lastFrameB64 = null;      // frame gần nhất (cho vision)
@@ -148,10 +148,12 @@ class BrowserStreamService {
         };
         this.cdpSession.on('Page.screencastFrame', this._screencastHandler);
       }
-      // everyNthFrame: Chromium BỎ QUA frame trước khi encode → giảm tải CPU encode JPEG
-      // (trên Render free 0.5 vCPU, encode ở nhịp compositor 60/s là nút thắt chính).
-      const targetFps = Math.max(1, this.streamOpts.fps || 15);
-      const everyNthFrame = Math.max(1, Math.min(4, Math.round(60 / targetFps)));
+      // everyNthFrame: Chromium BỎ QUA frame trước khi encode → giảm tải CPU encode JPEG.
+      // QUAN TRỌNG: nhịp thực của compositor trên Render free (software raster) KHÔNG phải 60/s.
+      // Nếu đặt everyNthFrame=4 theo giả định 60fps thì khi compositor chỉ chạy ~5fps
+      // ta chỉ còn ~1.2fps thật. Mặc định everyNthFrame=1 (nhận mọi frame compositor tạo ra),
+      // throttle thật do minGap trong handler + streamOpts.fps quyết định.
+      const everyNthFrame = Math.max(1, Math.min(10, this.streamOpts.everyNthFrame || 1));
       await this.cdpSession.send('Page.startScreencast', {
         format: 'jpeg',
         quality: this.streamOpts.quality,
@@ -222,6 +224,7 @@ class BrowserStreamService {
     if (typeof opts.fps === 'number') this.streamOpts.fps = Math.max(1, Math.min(60, opts.fps | 0));
     if (typeof opts.maxWidth === 'number') this.streamOpts.maxWidth = opts.maxWidth | 0;
     if (typeof opts.maxHeight === 'number') this.streamOpts.maxHeight = opts.maxHeight | 0;
+    if (typeof opts.everyNthFrame === 'number') this.streamOpts.everyNthFrame = Math.max(1, Math.min(10, opts.everyNthFrame | 0));
     if (this._screencastOn) {
       try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
       this._screencastOn = false;
@@ -661,11 +664,11 @@ class BrowserStreamService {
   }
 
   async navigate(url) {
-    if (!this.page) {
-      await this.launch({ url });
-    } else {
-      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    }
+    // Luôn chờ page sẵn sàng rồi TỰ goto. Lưu ý: launch({url}) KHÔNG dùng được ở đây —
+    // nếu SSE đã kích hoạt launch không kèm URL, launch() trả về _launchPromise cũ
+    // và nuốt mất url → trang đứng ở about:blank. Phải goto tường minh.
+    await this._ensurePage();
+    await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Trả luôn TIÊU ĐỀ + TEXT trang để agent (model text) đọc được nội dung ngay,
     // không phải đoán qua screenshot (model không nhìn ảnh).
     let title = '';
@@ -890,6 +893,11 @@ class BrowserStreamService {
     const scrollY0 = await readY();
 
     const job = async () => {
+      const stats = {
+        scrollY0, scrollY1: null, moved: null,
+        durationMs, frames: steps, running: true, error: undefined, at: Date.now(),
+      };
+      this._scrollStats = stats; // ghi ngay để status không trả stats của job cũ
       try {
         await this.page.evaluate(async ({ py, dur }) => {
           window.__rexiStopScroll = false;
@@ -916,12 +924,12 @@ class BrowserStreamService {
         }
       }
       const scrollY1 = await readY();
-      this._scrollStats = {
-        scrollY0, scrollY1,
-        moved: (scrollY0 != null && scrollY1 != null) ? (scrollY1 - scrollY0) : null,
-        durationMs, frames: steps, error: lastErr || undefined, at: Date.now(),
-      };
-      return this._scrollStats;
+      stats.scrollY1 = scrollY1;
+      stats.moved = (scrollY0 != null && scrollY1 != null) ? (scrollY1 - scrollY0) : null;
+      stats.running = false;
+      stats.error = lastErr || undefined;
+      stats.at = Date.now();
+      return stats;
     };
     this._scrollJob = job();
 
@@ -929,13 +937,16 @@ class BrowserStreamService {
       try { await this._scrollJob; } catch (e) { lastErr = e.message; }
     }
 
+    const st = this._scrollStats || { scrollY0, scrollY1: null, moved: null, running: false };
     return {
       success: true, mode, started: true, steps, durationMs, intervalMs, perFrame: Math.round(perFrame * 100) / 100,
-      scrollY0, scrollY1: this._scrollStats ? this._scrollStats.scrollY1 : null,
-      moved: this._scrollStats ? this._scrollStats.moved : null,
+      scrollY0: st.scrollY0,
+      scrollY1: wait ? st.scrollY1 : null,
+      moved: wait ? st.moved : null,
+      running: st.running,
       error: lastErr || undefined,
       message: 'Đã cuộn liên tục ' + durationMs + 'ms' +
-        (this._scrollStats && this._scrollStats.moved != null ? ' (dịch chuyển ' + this._scrollStats.moved + 'px)' : ''),
+        (wait && st.moved != null ? ' (dịch chuyển ' + st.moved + 'px)' : ''),
     };
   }
 

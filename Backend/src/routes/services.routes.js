@@ -3005,6 +3005,17 @@ router.post('/browser/scroll', authMiddleware, async (req, res) => {
   }
 });
 
+// GET: đọc text + viewportText + scrollY của trang hiện tại (tương đương tool browser_read)
+router.get('/browser/read', authMiddleware, async (req, res) => {
+  try {
+    const maxChars = Number(req.query.maxChars) || 6000;
+    const result = await browserStream.readText(maxChars);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 router.post('/browser/close', authMiddleware, async (req, res) => {
   try {
     await browserStream.close();
@@ -3121,8 +3132,8 @@ router.post('/browser/scroll-stop', authMiddleware, async (req, res) => {
 // POST: chỉnh thông số stream (chất lượng/fps/kích thước) — "mượt hơn" hoặc "nhẹ hơn"
 router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
   try {
-    const { quality, fps, maxWidth, maxHeight } = req.body || {};
-    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight });
+    const { quality, fps, maxWidth, maxHeight, everyNthFrame } = req.body || {};
+    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight, everyNthFrame });
     res.json({ success: true, opts });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
