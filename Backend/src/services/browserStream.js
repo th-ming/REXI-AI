@@ -30,7 +30,10 @@ class BrowserStreamService {
     this._screencastOn = false;
     this._screencastHandler = null;
     this._fallbackInterval = null;
-    this.streamOpts = { quality: 45, maxWidth: 960, maxHeight: 540, fps: 15, everyNthFrame: 1, scale: 1 };
+    this.streamOpts = {
+      quality: 45, maxWidth: 960, maxHeight: 540, fps: 15, everyNthFrame: 1,
+      scale: 1, viewportWidth: 1280, viewportHeight: 720,
+    };
     this._lastFrameTs = 0;
     this._droppedFrames = 0;
     this._lastFrameB64 = null;      // frame gần nhất (cho vision)
@@ -160,6 +163,7 @@ class BrowserStreamService {
         maxWidth: this.streamOpts.maxWidth,
         maxHeight: this.streamOpts.maxHeight,
         everyNthFrame,
+        optimizeForSpeed: true,
       });
       this._screencastOn = true;
       if (this._fallbackInterval) { clearInterval(this._fallbackInterval); this._fallbackInterval = null; }
@@ -221,21 +225,44 @@ class BrowserStreamService {
   // Đổi thông số stream (quality/fps/kích thước) — restart screencast nếu đang chạy.
   async setStreamOpts(opts = {}) {
     const prevScale = this.streamOpts.scale;
+    const prevViewport = { w: this.streamOpts.viewportWidth, h: this.streamOpts.viewportHeight };
+    const prevVisual = {
+      quality: this.streamOpts.quality, maxWidth: this.streamOpts.maxWidth,
+      maxHeight: this.streamOpts.maxHeight, everyNthFrame: this.streamOpts.everyNthFrame,
+    };
     if (typeof opts.quality === 'number') this.streamOpts.quality = Math.max(20, Math.min(90, opts.quality | 0));
     if (typeof opts.fps === 'number') this.streamOpts.fps = Math.max(1, Math.min(60, opts.fps | 0));
     if (typeof opts.maxWidth === 'number') this.streamOpts.maxWidth = opts.maxWidth | 0;
     if (typeof opts.maxHeight === 'number') this.streamOpts.maxHeight = opts.maxHeight | 0;
     if (typeof opts.everyNthFrame === 'number') this.streamOpts.everyNthFrame = Math.max(1, Math.min(10, opts.everyNthFrame | 0));
     if (typeof opts.scale === 'number') this.streamOpts.scale = Math.max(0.5, Math.min(2, opts.scale));
-    if (this.streamOpts.scale !== prevScale) {
+    if (typeof opts.viewportWidth === 'number') this.streamOpts.viewportWidth = Math.max(320, Math.min(1920, opts.viewportWidth | 0));
+    if (typeof opts.viewportHeight === 'number') this.streamOpts.viewportHeight = Math.max(240, Math.min(1080, opts.viewportHeight | 0));
+    // Đổi viewport ⇒ khung capture phải theo tỉ lệ mới (để ảnh không méo + FE ánh xạ click đúng).
+    if (opts.viewportWidth !== undefined || opts.viewportHeight !== undefined) {
+      if (opts.maxWidth === undefined) this.streamOpts.maxWidth = this.streamOpts.viewportWidth;
+      if (opts.maxHeight === undefined) this.streamOpts.maxHeight = this.streamOpts.viewportHeight;
+    }
+    const emuChanged = this.streamOpts.scale !== prevScale
+      || this.streamOpts.viewportWidth !== prevViewport.w
+      || this.streamOpts.viewportHeight !== prevViewport.h;
+    if (emuChanged) {
       await this._applyEmulation();
     }
-    if (this._screencastOn) {
+    // Chỉ restart screencast khi tham số ẢNH đổi. Đổi fps/scale không cần restart
+    // (restart tốn CPU và làm gián đoạn stream).
+    const visualChanged = prevVisual.quality !== this.streamOpts.quality
+      || prevVisual.maxWidth !== this.streamOpts.maxWidth
+      || prevVisual.maxHeight !== this.streamOpts.maxHeight
+      || prevVisual.everyNthFrame !== this.streamOpts.everyNthFrame;
+    if (visualChanged && this._screencastOn) {
       try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
       this._screencastOn = false;
       this._lastFrameTs = 0;
       await this.startScreencast();
     }
+    // Báo lại opts cho FE (viewport đổi → FE phải đổi cách ánh xạ click).
+    this._sendEvent({ type: 'hello', stream: 'screencast', opts: this.streamOpts });
     return this.streamOpts;
   }
 
@@ -401,20 +428,24 @@ class BrowserStreamService {
     return this._launchPromise;
   }
 
-  // Ép device metrics: viewport CSS px (giữ nguyên 1280×720 → click mapping FE không đổi)
-  // + deviceScaleFactor (giảm số pixel RASTER trên software GPU).
-  // Raster = CSS px × dsf → dsf 0.5 ⇒ 1/4 pixel, encode JPEG nhanh hơn ~4×.
+  // Ép device metrics: viewport CSS px + deviceScaleFactor.
+  // RASTER chạy ở device pixel = CSS px × deviceScaleFactor.
+  // - viewportWidth/Height: GIẢM viewport ⇒ ít pixel raster ⇒ nhanh hơn (đổi layout CSS,
+  //   nên FE phải ánh xạ click theo viewport thật — FE đọc opts.viewportWidth/Height).
+  // - deviceScaleFactor: nhân thêm vào số pixel raster (giữ nguyên layout CSS).
   async _applyEmulation() {
     if (!this.cdpSession) return;
+    const vw = Math.max(320, Math.min(1920, Number(this.streamOpts.viewportWidth) || 1280));
+    const vh = Math.max(240, Math.min(1080, Number(this.streamOpts.viewportHeight) || 720));
     const dsf = Math.max(0.5, Math.min(2, Number(this.streamOpts.scale) || 1));
     try {
       await this.cdpSession.send('Emulation.setDeviceMetricsOverride', {
-        width: 1280, height: 720,
+        width: vw, height: vh,
         deviceScaleFactor: dsf,
         mobile: false,
-        screenWidth: 1280, screenHeight: 720,
+        screenWidth: vw, screenHeight: vh,
       });
-      console.log('[BrowserStream] Emulation applied: 1280x720 CSS, dsf=' + dsf);
+      console.log(`[BrowserStream] Emulation applied: ${vw}x${vh} CSS, dsf=${dsf}`);
     } catch (e) {
       console.warn('[BrowserStream] _applyEmulation failed:', e.message);
     }
@@ -933,7 +964,7 @@ class BrowserStreamService {
         if (mode === 'cdp') {
           // CUỘN DO COMPOSITOR chạy (Input.synthesizeScrollGesture) — không chiếm main thread.
           // rAF trong page kéo main thread → compositor không kịp raster → fps rơi.
-          const perGesture = Math.max(50, Math.abs(deltaY));
+          // CDP quy ước yDistance > 0 = cuộn LÊN, nên đảo dấu để cuộn xuống.
           const t0 = Date.now();
           while (Date.now() - t0 < durationMs && this.page && !this.page.isClosed()) {
             if (this._scrollStop) break;
@@ -941,7 +972,7 @@ class BrowserStreamService {
               await this.cdpSession.send('Input.synthesizeScrollGesture', {
                 x: 640, y: 360,
                 xDistance: 0,
-                yDistance: deltaY >= 0 ? perGesture : -perGesture,
+                yDistance: deltaY >= 0 ? -Math.max(50, Math.abs(deltaY)) : Math.max(50, Math.abs(deltaY)),
                 gestureSourceType: 'mouse',
                 preventFling: true,
                 repeatCount: 0,

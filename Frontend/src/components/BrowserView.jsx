@@ -26,6 +26,8 @@ export default function BrowserView({ onClose }) {
   const [taskInfo, setTaskInfo] = useState(null);
   const [visionLoading, setVisionLoading] = useState(false);
   const [streamRes, setStreamRes] = useState({ w: 1280, h: 720 });
+  // Viewport thật của trang (CSS px) — server có thể đổi để giảm tải raster.
+  const [viewport, setViewport] = useState({ w: 1280, h: 720 });
   const stepsEndRef = useRef(null);
 
   useEffect(() => {
@@ -63,7 +65,14 @@ export default function BrowserView({ onClose }) {
           const ctx = canvasRef.current.getContext('2d');
           const img = new Image();
           img.onload = () => {
-            ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height);
+            const cv = canvasRef.current;
+            if (!cv) return;
+            // Canvas bitmap = kích thước ảnh thật (Chromium giữ tỉ lệ khi scale).
+            // Bảo đảm khung hình không méo + ánh xạ click chính xác.
+            if (cv.width !== img.naturalWidth || cv.height !== img.naturalHeight) {
+              cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+            }
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
             frameCountRef.current++;
           };
           img.src = msg.data;
@@ -71,6 +80,11 @@ export default function BrowserView({ onClose }) {
         if (msg.type === 'hello' && msg.opts) {
           // Server có thể đổi kích thước stream → cập nhật nhãn cho đúng.
           setStreamRes({ w: Number(msg.opts.maxWidth) || 1280, h: Number(msg.opts.maxHeight) || 720 });
+          // Viewport thật của trang (CSS px) — dùng để ánh xạ toạ độ click.
+          setViewport({
+            w: Number(msg.opts.viewportWidth) || 1280,
+            h: Number(msg.opts.viewportHeight) || 720,
+          });
         }
         if (msg.type === 'auth_failed') {
           setStatus('error');
@@ -175,17 +189,27 @@ export default function BrowserView({ onClose }) {
 
   // Canvas dùng objectFit:'contain' → nội dung 16:9 có thể bị letterbox trong khung.
   // Phải ánh xạ toạ độ chuột theo vùng nội dung THẬT, không theo cả khung.
+  // Bitmap canvas = kích thước ảnh stream (maxWidth×maxHeight, cùng tỉ lệ với viewport CSS).
   const canvasToPage = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const VW = 1280, VH = 720;
-    const scale = Math.min(rect.width / VW, rect.height / VH);
-    const drawW = VW * scale, drawH = VH * scale;
+    const cv = canvasRef.current;
+    if (!cv) return null;
+    const rect = cv.getBoundingClientRect();
+    const imgW = cv.width || 1280, imgH = cv.height || 720;
+    const VW = viewport.w, VH = viewport.h;
+    // 1) scale bitmap -> khung chứa (objectFit: contain)
+    const scale = Math.min(rect.width / imgW, rect.height / imgH);
+    const drawW = imgW * scale, drawH = imgH * scale;
     const offX = (rect.width - drawW) / 2;
     const offY = (rect.height - drawH) / 2;
-    const px = (e.clientX - rect.left - offX) / scale;
-    const py = (e.clientY - rect.top - offY) / scale;
-    if (px < 0 || py < 0 || px > VW || py > VH) return null; // bấm ra vùng đen
-    return { x: Math.round(px), y: Math.round(py) };
+    // 2) toạ độ trong bitmap
+    const bx = (e.clientX - rect.left - offX) / scale;
+    const by = (e.clientY - rect.top - offY) / scale;
+    if (bx < 0 || by < 0 || bx > imgW || by > imgH) return null; // bấm ra vùng đen
+    // 3) bitmap -> toạ độ trang (CSS px của viewport)
+    return {
+      x: Math.round((bx / imgW) * VW),
+      y: Math.round((by / imgH) * VH),
+    };
   };
 
   const handleCanvasClick = (e) => {
@@ -575,8 +599,8 @@ export default function BrowserView({ onClose }) {
         <div className="flex-1 relative overflow-hidden bg-black">
           <canvas
             ref={canvasRef}
-            width={1280}
-            height={720}
+            width={viewport.w}
+            height={viewport.h}
             style={{
               width: '100%',
               height: '100%',

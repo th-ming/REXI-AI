@@ -3132,8 +3132,8 @@ router.post('/browser/scroll-stop', authMiddleware, async (req, res) => {
 // POST: chỉnh thông số stream (chất lượng/fps/kích thước) — "mượt hơn" hoặc "nhẹ hơn"
 router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
   try {
-    const { quality, fps, maxWidth, maxHeight, everyNthFrame, scale } = req.body || {};
-    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight, everyNthFrame, scale });
+    const { quality, fps, maxWidth, maxHeight, everyNthFrame, scale, viewportWidth, viewportHeight } = req.body || {};
+    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight, everyNthFrame, scale, viewportWidth, viewportHeight });
     res.json({ success: true, opts });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
