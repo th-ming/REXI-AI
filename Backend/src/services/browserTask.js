@@ -115,24 +115,33 @@ class BrowserTaskRunner {
         thought = decision.thought || '';
         action = decision.action || { type: 'wait', amount: 300 };
 
-        // CHỐNG LẶP: nếu hành động giống hệt bước trước → ép đọc nội dung (hoặc kết luận nếu đã đọc rồi)
-        const sig = action.type + '|' + (action.selector || action.url || action.text || action.key || action.direction || '');
-        if (task.lastSig && task.lastSig === sig) {
-          task.repeatCount = (task.repeatCount || 0) + 1;
-          if (task.repeatCount >= 2) {
-            if (task.readText) {
-              action = { type: 'wait', amount: 200 };
-              decision.done = true;
-              decision.summary = 'Đã lặp hành động — dừng. Đọc được: ' + task.readText.replace(/\s+/g, ' ').slice(0, 200);
-            } else {
-              action = { type: 'read' };
-              thought = (thought ? thought + ' ' : '') + '(ép đọc nội dung vì lặp hành động)';
-            }
-          }
-        } else {
-          task.repeatCount = 0;
+        // CHỐNG LẶP — đếm theo chữ ký hành động.
+        // Với `scroll`, chữ ký KÈM vị trí scrollY → cuộn vẫn tiến triển sẽ KHÔNG bị coi là lặp
+        // (trước đây task dừng sớm vì mọi lần cuộn đều trùng chữ ký).
+        // Chỉ khi trang đã cuộn tới cuối (scrollY đứng yên) mới bị ép đọc rồi kết luận.
+        const sigPayload = action.selector || action.url || action.text || action.key || action.direction || '';
+        const sig = action.type + '|' + sigPayload +
+          (action.type === 'scroll' ? '@' + Math.round((Number(obs.scrollY) || 0) / 40) : '');
+        task.sigCounts = task.sigCounts || {};
+        const repeatCount = (task.sigCounts[sig] || 0) + 1;
+        task.sigCounts[sig] = repeatCount;
+        if (Object.keys(task.sigCounts).length > 60) {
+          // giữ 30 chữ ký có tần suất cao nhất, xoá phần còn lại (tránh phình bộ nhớ)
+          const keys = Object.keys(task.sigCounts).sort((a, b) => task.sigCounts[b] - task.sigCounts[a]);
+          keys.slice(30).forEach((k) => delete task.sigCounts[k]);
         }
-        task.lastSig = action.type + '|' + (action.selector || action.url || action.text || action.key || action.direction || '');
+        if (repeatCount >= 3) {
+          const stuckType = action.type;
+          if (task.readText) {
+            action = { type: 'wait', amount: 200 };
+            decision.done = true;
+            decision.summary = 'Không tiến triển thêm (lặp ' + stuckType + ' ' + repeatCount + ' lần). Đọc được: ' +
+              String(task.readText).replace(/\s+/g, ' ').slice(-260);
+          } else {
+            action = { type: 'read' };
+            thought = (thought ? thought + ' ' : '') + '(ép đọc nội dung vì lặp ' + stuckType + ')';
+          }
+        }
 
         const ex = await this._exec(action);
         ok = ex.ok !== false;
@@ -201,8 +210,10 @@ class BrowserTaskRunner {
       '- Đọc nội dung đang hiển thị (text) → {"type":"read"} — dùng khi cần trích câu trả lời/tên mục.\n' +
       '- Cần đọc hình/canvas/game → {"type":"vision","text":"<câu hỏi cụ thể>"} (chỉ khi thật sự cần).\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
-      'CHỐNG LẶP: tuyệt đối không lặp lại đúng hành động của bước ngay trước. Nếu trang đã ở đúng trạng thái,\n' +
-      'hãy {"type":"read"} để lấy nội dung rồi kết luận done=true (kèm summary).\n' +
+      'CUỘN: được phép cuộn nhiều lần liên tiếp để đọc hết nội dung — miễn là vị trí scrollY vẫn tăng.\n' +
+      'Chỉ khi scrollY không còn tăng (đã tới cuối trang) mới đổi hành động.\n' +
+      'CHỐNG LẶP: không lặp lại đúng một hành động khi trang đã ở trạng thái đó.\n' +
+      'Nếu trang đã ở đúng trạng thái, hãy {"type":"read"} để lấy nội dung rồi kết luận done=true (kèm summary).\n' +
       'Đây là lần chạy TỰ ĐỘNG LIÊN TỤC: cứ trả về bước tiếp theo, đừng dừng lại để hỏi.';
 
     const user = 'MỤC TIÊU: ' + task.goal + '\n' +
@@ -310,9 +321,17 @@ class BrowserTaskRunner {
           const amount = Math.min(4000, Math.max(100, Number(a.amount) || 600));
           const dy = a.direction === 'up' ? -amount : a.direction === 'left' ? 0 : a.direction === 'right' ? 0 : amount;
           const dx = a.direction === 'left' ? -amount : a.direction === 'right' ? amount : 0;
+          const readY = () => page.evaluate(() => Math.round(window.scrollY || 0)).catch(() => null);
+          const y0 = await readY();
           await page.mouse.wheel(dx, dy);
-          await page.waitForTimeout(150).catch(() => {});
-          return { ok: true, message: `Cuộn ${a.direction || 'down'} ${amount}px` };
+          await page.waitForTimeout(180).catch(() => {});
+          const y1 = await readY();
+          const moved = (y0 != null && y1 != null) ? (y1 - y0) : null;
+          return {
+            ok: true,
+            message: 'Cuộn ' + (a.direction || 'down') + ' ' + amount + 'px' +
+              (moved != null ? ' (vị trí ' + y0 + ' → ' + y1 + ', dịch chuyển ' + (moved >= 0 ? '+' : '') + moved + 'px)' : ''),
+          };
         }
         case 'goto': {
           const check = await assertPublicUrlAsync(a.url);

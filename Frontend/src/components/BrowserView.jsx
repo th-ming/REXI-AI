@@ -25,6 +25,7 @@ export default function BrowserView({ onClose }) {
   const [taskRunning, setTaskRunning] = useState(false);
   const [taskInfo, setTaskInfo] = useState(null);
   const [visionLoading, setVisionLoading] = useState(false);
+  const [streamRes, setStreamRes] = useState({ w: 1280, h: 720 });
   const stepsEndRef = useRef(null);
 
   useEffect(() => {
@@ -66,6 +67,10 @@ export default function BrowserView({ onClose }) {
             frameCountRef.current++;
           };
           img.src = msg.data;
+        }
+        if (msg.type === 'hello' && msg.opts) {
+          // Server có thể đổi kích thước stream → cập nhật nhãn cho đúng.
+          setStreamRes({ w: Number(msg.opts.maxWidth) || 1280, h: Number(msg.opts.maxHeight) || 720 });
         }
         if (msg.type === 'auth_failed') {
           setStatus('error');
@@ -168,29 +173,38 @@ export default function BrowserView({ onClose }) {
     setStatus('disconnected');
   };
 
+  // Canvas dùng objectFit:'contain' → nội dung 16:9 có thể bị letterbox trong khung.
+  // Phải ánh xạ toạ độ chuột theo vùng nội dung THẬT, không theo cả khung.
+  const canvasToPage = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const VW = 1280, VH = 720;
+    const scale = Math.min(rect.width / VW, rect.height / VH);
+    const drawW = VW * scale, drawH = VH * scale;
+    const offX = (rect.width - drawW) / 2;
+    const offY = (rect.height - drawH) / 2;
+    const px = (e.clientX - rect.left - offX) / scale;
+    const py = (e.clientY - rect.top - offY) / scale;
+    if (px < 0 || py < 0 || px > VW || py > VH) return null; // bấm ra vùng đen
+    return { x: Math.round(px), y: Math.round(py) };
+  };
+
   const handleCanvasClick = (e) => {
     if (!connected) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const scaleX = 1280 / rect.width;
-    const scaleY = 720 / rect.height;
+    const p = canvasToPage(e);
+    if (!p) return;
     apiFetch('/services/browser/click', {
       method: 'POST',
-      body: JSON.stringify({ x: Math.round(x * scaleX), y: Math.round(y * scaleY) }),
+      body: JSON.stringify({ x: p.x, y: p.y }),
     }).catch(console.error);
   };
 
   const handleCanvasDoubleClick = (e) => {
     if (!connected) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const scaleX = 1280 / rect.width;
-    const scaleY = 720 / rect.height;
+    const p = canvasToPage(e);
+    if (!p) return;
     apiFetch('/services/browser/click', {
       method: 'POST',
-      body: JSON.stringify({ x: Math.round(x * scaleX), y: Math.round(y * scaleY) }),
+      body: JSON.stringify({ x: p.x, y: p.y }),
     }).catch(console.error);
   };
 
@@ -366,7 +380,7 @@ export default function BrowserView({ onClose }) {
           {connected && (
             <div className="mt-1 text-[10px] text-slate-500 flex justify-between">
               <span>FPS: {fps}</span>
-              <span>1280×720</span>
+              <span>{streamRes.w}×{streamRes.h}</span>
             </div>
           )}
         </div>
@@ -545,7 +559,7 @@ export default function BrowserView({ onClose }) {
               <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
               {connected ? 'Live Stream' : tx(lang, 'Chưa kết nối')}
             </span>
-            {connected && <span className="text-[10px] text-slate-500 px-2 py-0.5 rounded bg-white/5">1280 × 720</span>}
+            {connected && <span className="text-[10px] text-slate-500 px-2 py-0.5 rounded bg-white/5">{streamRes.w} × {streamRes.h}</span>}
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -30,11 +30,14 @@ class BrowserStreamService {
     this._screencastOn = false;
     this._screencastHandler = null;
     this._fallbackInterval = null;
-    this.streamOpts = { quality: 55, maxWidth: 1280, maxHeight: 720, fps: 20 };
+    this.streamOpts = { quality: 45, maxWidth: 960, maxHeight: 540, fps: 15 };
     this._lastFrameTs = 0;
     this._droppedFrames = 0;
     this._lastFrameB64 = null;      // frame gần nhất (cho vision)
     this._visionModel = null;       // model vision đã xác nhận hoạt động
+    this._lastFrameAt = 0;          // mốc thời gian frame cuối (để keepalive)
+    this._keepAliveTimer = null;
+    this._encodeCount = 0;          // số frame browser đã encode (đo tải CPU)
   }
 
   setWSS(wss) {
@@ -135,32 +138,62 @@ class BrowserStreamService {
         this._screencastHandler = async (params) => {
           // Phải ACK mỗi frame, nếu không Chromium ngừng gửi frame tiếp.
           try { await this.cdpSession.send('Page.screencastFrameAck', { sessionId: params.sessionId }); } catch (e) {}
+          this._encodeCount++;
           const now = Date.now();
-          const minGap = 1000 / (this.streamOpts.fps || 20);
+          const minGap = 1000 / (this.streamOpts.fps || 15);
           if (now - this._lastFrameTs < minGap) { this._droppedFrames++; return; } // throttle tới fps mục tiêu
           this._lastFrameTs = now;
+          this._lastFrameAt = now;
           this._sendFrame(params.data);
         };
         this.cdpSession.on('Page.screencastFrame', this._screencastHandler);
       }
+      // everyNthFrame: Chromium BỎ QUA frame trước khi encode → giảm tải CPU encode JPEG
+      // (trên Render free 0.5 vCPU, encode ở nhịp compositor 60/s là nút thắt chính).
+      const targetFps = Math.max(1, this.streamOpts.fps || 15);
+      const everyNthFrame = Math.max(1, Math.min(4, Math.round(60 / targetFps)));
       await this.cdpSession.send('Page.startScreencast', {
         format: 'jpeg',
         quality: this.streamOpts.quality,
         maxWidth: this.streamOpts.maxWidth,
         maxHeight: this.streamOpts.maxHeight,
-        everyNthFrame: 1,
+        everyNthFrame,
       });
       this._screencastOn = true;
       if (this._fallbackInterval) { clearInterval(this._fallbackInterval); this._fallbackInterval = null; }
-      console.log('[BrowserStream] Screencast ON', JSON.stringify(this.streamOpts));
+      this._startKeepAlive();
+      console.log('[BrowserStream] Screencast ON', JSON.stringify({ ...this.streamOpts, everyNthFrame }));
     } catch (e) {
       console.error('[BrowserStream] startScreencast failed, dùng fallback:', e.message);
       this._startFallbackFrames();
     }
   }
 
+  // Keepalive: trang tĩnh không sinh frame mới → compositor ngừng đẩy → client tưởng chết.
+  // Cứ mỗi 1.5s nếu không có frame nào mới → chụp 1 tấm bằng CDP để đẩy cho client.
+  _startKeepAlive() {
+    if (this._keepAliveTimer) return;
+    this._keepAliveTimer = setInterval(async () => {
+      if (!this._screencastOn) return;
+      if (this.subscribers.size === 0 && this.clients.size === 0) return;
+      const idle = Date.now() - (this._lastFrameAt || 0);
+      if (idle < 1500) return;
+      try {
+        const r = await this.cdpSession.send('Page.captureScreenshot', { format: 'jpeg', quality: this.streamOpts.quality });
+        this._lastFrameAt = Date.now();
+        this._lastFrameTs = this._lastFrameAt;
+        this._sendFrame(r.data);
+      } catch (e) { /* ignore */ }
+    }, 1200);
+  }
+
+  _stopKeepAlive() {
+    if (this._keepAliveTimer) { clearInterval(this._keepAliveTimer); this._keepAliveTimer = null; }
+  }
+
   async stopScreencast() {
     if (this._fallbackInterval) { clearInterval(this._fallbackInterval); this._fallbackInterval = null; }
+    this._stopKeepAlive();
     if (!this._screencastOn || !this.cdpSession) { this._screencastOn = false; return; }
     try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
     this._screencastOn = false;
@@ -244,17 +277,23 @@ class BrowserStreamService {
   }
 
   // Lấy frame hiện tại (b64) — ưu tiên frame vừa stream, không thì chụp 1 tấm.
-  async getFrameB64() {
+  async getFrameB64(opts = {}) {
+    // fresh=true: chụp mới để không đọc trúng frame cũ (quan trọng cho vision).
+    if (opts.fresh) {
+      try {
+        const shot = await this.debugFrame();
+        if (shot && shot.success) return shot.b64;
+      } catch (e) { /* ignore */ }
+    }
     if (this._lastFrameB64) return this._lastFrameB64;
     const shot = await this.debugFrame().catch(() => null);
     return shot && shot.success ? shot.b64 : null;
   }
 
-  // ĐỌC MÀN HÌNH bằng model vision (Groq multimodal) — cho canvas/game/đồ hoạ không có DOM text.
   // ĐỌC MÀN HÌNH bằng model vision — cho canvas/game/đồ hoạ không có DOM text.
   // Ưu tiên NVIDIA (nvidiaChat: pool model VL + xoay key) → fallback Groq multimodal.
   async vision(prompt, opts = {}) {
-    const b64 = await this.getFrameB64();
+    const b64 = await this.getFrameB64({ fresh: opts.fresh !== false });
     if (!b64) return { success: false, error: 'Chưa có frame nào để đọc.' };
     const question = String(prompt || 'Mô tả chính xác nội dung đang hiển thị trên màn hình, kèm toạ độ các nút/điểm đáng chú ý.');
     const messages = [{
@@ -388,11 +427,11 @@ class BrowserStreamService {
         '--js-flags=--max-old-space-size=256',
         '--disable-blink-features=AutomationControlled',
         '--lang=vi-VN',
-        // --- MƯỢT: bỏ giới hạn frame-rate, tắt vsync, không throttle khi tab ẩn ---
-        '--disable-gpu-vsync',
-        '--disable-frame-rate-limit',
-        '--run-all-compositor-stages-before-draw',
-        '--disable-features=CalculateNativeWinOcclusion',
+        // --- Tối ưu CPU cho Render free (0.5 vCPU, software raster) ---
+        // KHÔNG bật --disable-frame-rate-limit / --disable-gpu-vsync: chúng ép
+        // compositor chạy tốc độ tối đa → mỗi frame đều tốn CPU raster + encode.
+        // Nhịp frame giới hạn bằng everyNthFrame của Page.startScreencast.
+        '--disable-features=CalculateNativeWinOcclusion,BackForwardCache',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
@@ -419,7 +458,8 @@ class BrowserStreamService {
       }
 
       const context = await this.browser.newContext({
-        viewport: { width: 1280, height: 800 },
+        // Khớp canvas FE (1280×720) để toạ độ click bám đúng + giảm 10% diện tích raster.
+        viewport: { width: 1280, height: 720 },
         locale: 'vi-VN',
         timezoneId: 'Asia/Ho_Chi_Minh',
         deviceScaleFactor: 1,
@@ -839,15 +879,25 @@ class BrowserStreamService {
     const steps = Math.max(1, Math.ceil(durationMs / intervalMs));
     const perFrame = Math.max(0.5, (deltaY * 16) / intervalMs);
     const mode = String(opts.mode || 'raf');
+    const wait = opts.wait === true;   // mặc định chạy nền, không chặn request
     let lastErr = '';
+
+    const readY = async () => {
+      try {
+        return await this.page.evaluate(() => Math.round(window.scrollY || 0));
+      } catch (e) { return null; }
+    };
+    const scrollY0 = await readY();
 
     const job = async () => {
       try {
         await this.page.evaluate(async ({ py, dur }) => {
+          window.__rexiStopScroll = false;
           const start = performance.now();
           await new Promise((resolve) => {
             const tick = () => {
               const elapsed = performance.now() - start;
+              if (window.__rexiStopScroll) { resolve(false); return; }
               window.scrollBy(0, py);
               if (elapsed < dur) requestAnimationFrame(tick);
               else resolve(true);
@@ -865,13 +915,37 @@ class BrowserStreamService {
           await new Promise((r) => setTimeout(r, intervalMs));
         }
       }
+      const scrollY1 = await readY();
+      this._scrollStats = {
+        scrollY0, scrollY1,
+        moved: (scrollY0 != null && scrollY1 != null) ? (scrollY1 - scrollY0) : null,
+        durationMs, frames: steps, error: lastErr || undefined, at: Date.now(),
+      };
+      return this._scrollStats;
     };
     this._scrollJob = job();
 
+    if (wait) {
+      try { await this._scrollJob; } catch (e) { lastErr = e.message; }
+    }
+
     return {
       success: true, mode, started: true, steps, durationMs, intervalMs, perFrame: Math.round(perFrame * 100) / 100,
-      message: 'Đã bắt đầu cuộn liên tục ' + durationMs + 'ms',
+      scrollY0, scrollY1: this._scrollStats ? this._scrollStats.scrollY1 : null,
+      moved: this._scrollStats ? this._scrollStats.moved : null,
+      error: lastErr || undefined,
+      message: 'Đã cuộn liên tục ' + durationMs + 'ms' +
+        (this._scrollStats && this._scrollStats.moved != null ? ' (dịch chuyển ' + this._scrollStats.moved + 'px)' : ''),
     };
+  }
+
+  // Dừng cuộn liên tục (job rAF chạy nền)
+  async stopScrollContinuous() {
+    if (!this._scrollJob) return { success: false, error: 'Không có tác vụ cuộn nào đang chạy.' };
+    try { await this.page.evaluate(() => { window.__rexiStopScroll = true; }); } catch (e) { /* ignore */ }
+    this._scrollStopped = true;
+    this._scrollJob = null;
+    return { success: true, stats: this._scrollStats || null };
   }
 
   async close() {
@@ -935,7 +1009,10 @@ class BrowserStreamService {
         subscribers: this.subscribers.size,
         screencast: this._screencastOn,
         droppedFrames: this._droppedFrames,
+        encodedFrames: this._encodeCount,
+        lastFrameAt: this._lastFrameAt || null,
       },
+      scroll: this._scrollStats || null,
     };
   }
 
