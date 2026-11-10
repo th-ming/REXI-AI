@@ -3052,14 +3052,17 @@ router.get('/browser/stream-frames', async (req, res) => {
   });
   res.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
 
-  if (!browserStream.page && !browserStream.browser) {
-    browserStream.launch().catch(e => console.error('[Frames] Auto-launch error:', e.message));
-  }
-  await browserStream.startScreencast();
-
-  // Đăng ký vào kênh binary: _sendFrame() tự đẩy từng frame mới (không poll).
+  // Đăng ký vào kênh binary TRƯỚC khi launch → launch() biết có người xem → bật screencast.
   browserStream._frameSubs.add(res);
   browserStream._resetAutoClose();
+
+  try {
+    if (!browserStream.page || browserStream.page.isClosed()) {
+      await browserStream.launch();
+    }
+  } catch (e) {
+    console.error('[Frames] Auto-launch error:', e.message);
+  }
   await browserStream.startScreencast();
 
   const ka = setInterval(() => { try { if (!res.writableEnded && !res.destroyed) res.write('\r\n'); } catch (e) {} }, 15000);

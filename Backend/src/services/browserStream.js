@@ -559,6 +559,10 @@ class BrowserStreamService {
 
       // CDP session for frame capture
       this.cdpSession = await this.page.context().newCDPSession(this.page);
+      // Session MỚI ⇒ screencast cũ (gắn vào session cũ) đã chết. Reset cờ,
+      // nếu không startScreencast() sẽ early-return và không bao giờ nhận frame.
+      this._screencastOn = false;
+      this._stat.cdp = 0; this._stat.sent = 0; this._stat.throttled = 0; this._stat.bytes = 0;
       console.log('[BrowserStream] CDP session created');
 
       await this.cdpSession.send('Page.enable');
@@ -567,8 +571,8 @@ class BrowserStreamService {
       // raster, CSS layout vẫn 1280×720 nên toạ độ click của FE không đổi.
       await this._applyEmulation();
       // Bỏ Animation.enable — không cần, tiết kiệm memory
-      // Nếu đã có người xem (SSE/WS mở trước khi launch) → bật screencast ngay.
-      if (this.subscribers.size > 0 || this.clients.size > 0) {
+      // Nếu đã có người xem (SSE/WS/kênh BINARY mở trước khi launch) → bật screencast ngay.
+      if (this._hasConsumers()) {
         this.startScreencast().catch(() => {});
       }
     } catch (e) {
@@ -1091,6 +1095,8 @@ class BrowserStreamService {
     this._screencastHandler = null;
     this.subscribers.forEach((res) => { try { if (!res.writableEnded) res.end(); } catch (e) {} });
     this.subscribers.clear();
+    this._frameSubs.forEach((res) => { try { if (!res.writableEnded) res.end(); } catch (e) {} });
+    this._frameSubs.clear();
     // Mỗi bước độc lập — 1 bước fail không chặn bước sau (tránh browser kẹt không đóng được → "toggle lỗi")
     if (this.cdpSession) {
       try { await this.cdpSession.detach(); } catch (e) { console.log('[close] cdp detach:', e.message); }
