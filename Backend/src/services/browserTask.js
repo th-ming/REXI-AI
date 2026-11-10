@@ -16,7 +16,7 @@ const ACTION_SCHEMA = {
     action: {
       type: 'object',
       properties: {
-        type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | read | vision' },
+        type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | read | vision | find' },
         selector: { type: 'string', description: 'CSS selector hoặc text=... (cho click/type)' },
         text: { type: 'string', description: 'text cần gõ, hoặc câu hỏi cho vision' },
         key: { type: 'string', description: 'phím (Enter, Space, ArrowDown...)' },
@@ -193,7 +193,36 @@ class BrowserTaskRunner {
     const terms = (String(this.task.goal).toLowerCase().match(/[a-zà-ỹ0-9]+/gi) || []).filter((w) => w.length >= 2);
     const els = await s._interactiveMap(70, terms).catch(() => []);
     const vp = await s._viewportText(2200).catch(() => '');
-    return { url, title, els, vp, scrollY, scrollHeight };
+    // BẢN ĐỒ TRANG: tiêu đề mục + anchor link — KỂ CẢ phần tử đang bị ẩn/collapsed
+    // (vd mục lục Wikipedia ở viewport 640px bị thu gọn → _interactiveMap không thấy).
+    // Nhờ đó agent biết "History" TỒN TẠI và đi thẳng tới, thay vì cuộn mù.
+    const outline = await this._outline().catch(() => ({ headings: [], anchors: [] }));
+    return { url, title, els, vp, scrollY, scrollHeight, outline };
+  }
+
+  // Quét cấu trúc trang: heading h1-h6 + anchor link (#id). Bỏ phần tử ẩn bằng 0 kích thước.
+  async _outline() {
+    const s = this.stream;
+    if (!s.page) return { headings: [], anchors: [] };
+    return s.page.evaluate(() => {
+      const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+      const headings = [];
+      document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach((h) => {
+        const text = norm(h.textContent);
+        if (text) headings.push({ level: h.tagName, text, id: h.id || '' });
+      });
+      const anchors = [];
+      const seen = new Set();
+      document.querySelectorAll('a[href^="#"]').forEach((a) => {
+        const text = norm(a.textContent);
+        const href = a.getAttribute('href') || '';
+        if (text && href.length > 1 && !seen.has(text + href)) {
+          seen.add(text + href);
+          anchors.push({ text, href });
+        }
+      });
+      return { headings: headings.slice(0, 80), anchors: anchors.slice(0, 80) };
+    });
   }
 
   // LLM quyết định hành động tiếp theo.
@@ -208,8 +237,12 @@ class BrowserTaskRunner {
       '- Gõ vào ô → {"type":"type","selector":..,"text":..}; phím → {"type":"press","key":"Enter"}.\n' +
       '- Cuộn → {"type":"scroll","direction":"down","amount":600}.\n' +
       '- Đọc nội dung đang hiển thị (text) → {"type":"read"} — dùng khi cần trích câu trả lời/tên mục.\n' +
+      '- TÌM một mục/đoạn có tên trên trang (kể cả mục lục bị thu gọn) → {"type":"find","text":"History"}. ' +
+      'Đây là cách ĐÚNG để tới thẳng một chuyên mục; ĐỪNG cuộn mù tìm chữ.\n' +
       '- Cần đọc hình/canvas/game → {"type":"vision","text":"<câu hỏi cụ thể>"} (chỉ khi thật sự cần).\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
+      'CÁCH TÌM CHUYÊN MỤC: xem "BẢN ĐỒ TRANG" (danh sách mục/anchor). Nếu mục tiêu nhắc tới một mục ' +
+      'có trong bản đồ → dùng {"type":"find"} hoặc click thẳng anchor href tương ứng. CHỈ cuộn khi thực sự cần.\n' +
       'CUỘN: được phép cuộn nhiều lần liên tiếp để đọc hết nội dung — miễn là vị trí scrollY vẫn tăng.\n' +
       'Chỉ khi scrollY không còn tăng (đã tới cuối trang) mới đổi hành động.\n' +
       'CHỐNG LẶP: không lặp lại đúng một hành động khi trang đã ở trạng thái đó.\n' +
@@ -222,12 +255,13 @@ class BrowserTaskRunner {
       'VỊ TRÍ CUỘN: scrollY=' + obs.scrollY + '/' + obs.scrollHeight + '\n' +
       'LỊCH SỬ:\n' + (task.history.join('\n') || '(bước đầu)') + '\n\n' +
       (task.readText ? 'NỘI DUNG ĐÃ ĐỌC (từ bước read):\n' + task.readText.slice(-900) + '\n\n' : '') +
+      'BẢN ĐỒ TRANG (mục & anchor — gồm cả mục bị thu gọn):\n' + this._formatOutline(obs.outline) + '\n\n' +
       'PHẦN TỬ TƯƠNG TÁC:\n' + (elList || '(không thấy)') + '\n\n' +
       'NỘI DUNG ĐANG NHÌN THẤY:\n' + (obs.vp.slice(0, 1500) || '(trống)');
 
     const fullPrompt = system + '\n\n' + user +
       '\n\nCHỈ trả về MỘT đối tượng JSON đúng schema sau, không thêm chữ khác:\n' +
-      JSON.stringify({ thought: '<câu>', done: false, summary: '<khi done>', action: { type: 'click|clickAt|type|press|scroll|goto|wait|read|vision', selector: '', text: '', key: '', direction: '', url: '', x: 0, y: 0, amount: 0 } });
+      JSON.stringify({ thought: '<câu>', done: false, summary: '<khi done>', action: { type: 'click|clickAt|type|press|scroll|goto|wait|read|vision|find', selector: '', text: '', key: '', direction: '', url: '', x: 0, y: 0, amount: 0 } });
 
     // 1) Groq với JSON schema (nhanh, chuẩn JSON)
     try {
@@ -263,6 +297,19 @@ class BrowserTaskRunner {
     const obj = this._parseJson(txt);
     if (!obj || !obj.action || !obj.action.type) throw new Error('LLM không trả về hành động hợp lệ');
     return obj;
+  }
+
+  // Rút gọn bản đồ trang thành text cho prompt (giới hạn độ dài).
+  _formatOutline(outline) {
+    if (!outline) return '(không có)';
+    const parts = [];
+    if (outline.headings && outline.headings.length) {
+      parts.push('MỤC: ' + outline.headings.slice(0, 40).map((h) => `[${h.level}]${h.text}${h.id ? ' (#' + h.id + ')' : ''}`).join(' | '));
+    }
+    if (outline.anchors && outline.anchors.length) {
+      parts.push('ANCHOR: ' + outline.anchors.slice(0, 40).map((a) => `"${a.text}"→${a.href}`).join(' | '));
+    }
+    return parts.join('\n') || '(không có)';
   }
 
   // Bóc JSON từ text (chịu ```json fences và text thừa).
@@ -342,6 +389,31 @@ class BrowserTaskRunner {
         case 'wait': {
           await page.waitForTimeout(Math.min(10000, Math.max(50, Number(a.amount) || 500)));
           return { ok: true, message: 'Chờ' };
+        }
+        case 'find': {
+          // Tìm mục/đoạn có tên trong bài (kể cả anchor đang bị ẩn) rồi nhảy tới.
+          // Deterministic — không phụ thuộc agent cuộn mù.
+          const needle = String(a.text || '').trim();
+          if (!needle) return { ok: false, error: 'thiếu text để tìm' };
+          const r = await page.evaluate((needle) => {
+            const low = needle.toLowerCase();
+            const cands = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,a[href^="#"],li,dt,p'));
+            const hit = cands.find((el) => {
+              const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+              return t && t.length <= 140 && t.includes(low);
+            });
+            if (!hit) return null;
+            hit.scrollIntoView({ block: 'center' });
+            const idEl = hit.closest('[id]');
+            return {
+              text: (hit.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+              id: (idEl && idEl.id) || hit.id || '',
+              y: Math.round(window.scrollY || 0),
+            };
+          }, needle);
+          if (!r) return { ok: false, error: 'Không thấy "' + needle + '" trên trang' };
+          await page.waitForTimeout(150).catch(() => {});
+          return { ok: true, message: 'Nhảy tới "' + r.text + '"' + (r.id ? ' (#' + r.id + ')' : '') + ' @Y=' + r.y };
         }
         case 'read': {
           const txt = await s._viewportText(1500).catch(() => '');
