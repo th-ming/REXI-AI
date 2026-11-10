@@ -120,8 +120,12 @@ class BrowserTaskRunner {
         // (trước đây task dừng sớm vì mọi lần cuộn đều trùng chữ ký).
         // Chỉ khi trang đã cuộn tới cuối (scrollY đứng yên) mới bị ép đọc rồi kết luận.
         const sigPayload = action.selector || action.url || action.text || action.key || action.direction || '';
+        // type/press LẶP LẠI là BÌNH THƯỜNG (gõ nhiều đáp án vào CÙNG một ô, vd game toán).
+        // Chỉ coi là kẹt khi TRANG không đổi → chữ ký kèm "dấu vân tay" nội dung đang thấy.
+        const stateTok = String(obs.vp || '').replace(/\s+/g, ' ').trim().slice(0, 120);
         const sig = action.type + '|' + sigPayload +
-          (action.type === 'scroll' ? '@' + Math.round((Number(obs.scrollY) || 0) / 40) : '');
+          (action.type === 'scroll' ? '@' + Math.round((Number(obs.scrollY) || 0) / 40) : '') +
+          ((action.type === 'type' || action.type === 'press') ? '@' + stateTok : '');
         task.sigCounts = task.sigCounts || {};
         const repeatCount = (task.sigCounts[sig] || 0) + 1;
         task.sigCounts[sig] = repeatCount;
