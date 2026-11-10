@@ -3116,8 +3116,8 @@ router.post('/browser/act', authMiddleware, async (req, res) => {
 // Cuộn liên tục (mượt) — dùng cho TikTok/shorts: nhịp cuộn ổn định trong N ms
 router.post('/browser/scroll-continuous', authMiddleware, async (req, res) => {
   try {
-    const { deltaX, deltaY, durationMs, intervalMs, wait } = req.body || {};
-    const result = await browserStream.scrollContinuous({ deltaX, deltaY, durationMs, intervalMs, wait });
+    const { deltaX, deltaY, durationMs, intervalMs, wait, mode } = req.body || {};
+    const result = await browserStream.scrollContinuous({ deltaX, deltaY, durationMs, intervalMs, wait, mode });
     res.json(result);
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
@@ -3132,8 +3132,8 @@ router.post('/browser/scroll-stop', authMiddleware, async (req, res) => {
 // POST: chỉnh thông số stream (chất lượng/fps/kích thước) — "mượt hơn" hoặc "nhẹ hơn"
 router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
   try {
-    const { quality, fps, maxWidth, maxHeight, everyNthFrame } = req.body || {};
-    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight, everyNthFrame });
+    const { quality, fps, maxWidth, maxHeight, everyNthFrame, scale } = req.body || {};
+    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight, everyNthFrame, scale });
     res.json({ success: true, opts });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });

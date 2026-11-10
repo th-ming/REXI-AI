@@ -30,7 +30,7 @@ class BrowserStreamService {
     this._screencastOn = false;
     this._screencastHandler = null;
     this._fallbackInterval = null;
-    this.streamOpts = { quality: 45, maxWidth: 960, maxHeight: 540, fps: 15, everyNthFrame: 1 };
+    this.streamOpts = { quality: 45, maxWidth: 960, maxHeight: 540, fps: 15, everyNthFrame: 1, scale: 1 };
     this._lastFrameTs = 0;
     this._droppedFrames = 0;
     this._lastFrameB64 = null;      // frame gần nhất (cho vision)
@@ -220,11 +220,16 @@ class BrowserStreamService {
 
   // Đổi thông số stream (quality/fps/kích thước) — restart screencast nếu đang chạy.
   async setStreamOpts(opts = {}) {
+    const prevScale = this.streamOpts.scale;
     if (typeof opts.quality === 'number') this.streamOpts.quality = Math.max(20, Math.min(90, opts.quality | 0));
     if (typeof opts.fps === 'number') this.streamOpts.fps = Math.max(1, Math.min(60, opts.fps | 0));
     if (typeof opts.maxWidth === 'number') this.streamOpts.maxWidth = opts.maxWidth | 0;
     if (typeof opts.maxHeight === 'number') this.streamOpts.maxHeight = opts.maxHeight | 0;
     if (typeof opts.everyNthFrame === 'number') this.streamOpts.everyNthFrame = Math.max(1, Math.min(10, opts.everyNthFrame | 0));
+    if (typeof opts.scale === 'number') this.streamOpts.scale = Math.max(0.5, Math.min(2, opts.scale));
+    if (this.streamOpts.scale !== prevScale) {
+      await this._applyEmulation();
+    }
     if (this._screencastOn) {
       try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
       this._screencastOn = false;
@@ -396,6 +401,25 @@ class BrowserStreamService {
     return this._launchPromise;
   }
 
+  // Ép device metrics: viewport CSS px (giữ nguyên 1280×720 → click mapping FE không đổi)
+  // + deviceScaleFactor (giảm số pixel RASTER trên software GPU).
+  // Raster = CSS px × dsf → dsf 0.5 ⇒ 1/4 pixel, encode JPEG nhanh hơn ~4×.
+  async _applyEmulation() {
+    if (!this.cdpSession) return;
+    const dsf = Math.max(0.5, Math.min(2, Number(this.streamOpts.scale) || 1));
+    try {
+      await this.cdpSession.send('Emulation.setDeviceMetricsOverride', {
+        width: 1280, height: 720,
+        deviceScaleFactor: dsf,
+        mobile: false,
+        screenWidth: 1280, screenHeight: 720,
+      });
+      console.log('[BrowserStream] Emulation applied: 1280x720 CSS, dsf=' + dsf);
+    } catch (e) {
+      console.warn('[BrowserStream] _applyEmulation failed:', e.message);
+    }
+  }
+
   // Chờ page sẵn sàng (browser có thể đã mở nhưng page chưa tạo xong) — tránh this.page undefined.
   async _ensurePage(timeoutMs = 25000) {
     const t0 = Date.now();
@@ -466,7 +490,7 @@ class BrowserStreamService {
         locale: 'vi-VN',
         timezoneId: 'Asia/Ho_Chi_Minh',
         deviceScaleFactor: 1,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36',
       });
 
       this.page = await context.newPage();
@@ -477,6 +501,10 @@ class BrowserStreamService {
       console.log('[BrowserStream] CDP session created');
 
       await this.cdpSession.send('Page.enable');
+      // Ép device metrics (viewport CSS px + deviceScaleFactor) để giảm tải RASTER.
+      // Raster chạy ở device pixel = CSS px × deviceScaleFactor → scale 0.5 = 1/4 số pixel
+      // raster, CSS layout vẫn 1280×720 nên toạ độ click của FE không đổi.
+      await this._applyEmulation();
       // Bỏ Animation.enable — không cần, tiết kiệm memory
       // Nếu đã có người xem (SSE/WS mở trước khi launch) → bật screencast ngay.
       if (this.subscribers.size > 0 || this.clients.size > 0) {
@@ -669,6 +697,8 @@ class BrowserStreamService {
     // và nuốt mất url → trang đứng ở about:blank. Phải goto tường minh.
     await this._ensurePage();
     await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Playwright reset device metrics khi goto → apply lại (giữ dsf nhẹ để raster rẻ).
+    await this._applyEmulation();
     // Trả luôn TIÊU ĐỀ + TEXT trang để agent (model text) đọc được nội dung ngay,
     // không phải đoán qua screenshot (model không nhìn ảnh).
     let title = '';
@@ -898,21 +928,44 @@ class BrowserStreamService {
         durationMs, frames: steps, running: true, error: undefined, at: Date.now(),
       };
       this._scrollStats = stats; // ghi ngay để status không trả stats của job cũ
+      this._scrollStop = false;
       try {
-        await this.page.evaluate(async ({ py, dur }) => {
-          window.__rexiStopScroll = false;
-          const start = performance.now();
-          await new Promise((resolve) => {
-            const tick = () => {
-              const elapsed = performance.now() - start;
-              if (window.__rexiStopScroll) { resolve(false); return; }
-              window.scrollBy(0, py);
-              if (elapsed < dur) requestAnimationFrame(tick);
-              else resolve(true);
-            };
-            requestAnimationFrame(tick);
-          });
-        }, { py: perFrame, dur: durationMs });
+        if (mode === 'cdp') {
+          // CUỘN DO COMPOSITOR chạy (Input.synthesizeScrollGesture) — không chiếm main thread.
+          // rAF trong page kéo main thread → compositor không kịp raster → fps rơi.
+          const perGesture = Math.max(50, Math.abs(deltaY));
+          const t0 = Date.now();
+          while (Date.now() - t0 < durationMs && this.page && !this.page.isClosed()) {
+            if (this._scrollStop) break;
+            try {
+              await this.cdpSession.send('Input.synthesizeScrollGesture', {
+                x: 640, y: 360,
+                xDistance: 0,
+                yDistance: deltaY >= 0 ? perGesture : -perGesture,
+                gestureSourceType: 'mouse',
+                preventFling: true,
+                repeatCount: 0,
+                speed: 800,
+              });
+            } catch (e) { lastErr = e.message; break; }
+            await new Promise((r) => setTimeout(r, intervalMs));
+          }
+        } else {
+          await this.page.evaluate(async ({ py, dur }) => {
+            window.__rexiStopScroll = false;
+            const start = performance.now();
+            await new Promise((resolve) => {
+              const tick = () => {
+                const elapsed = performance.now() - start;
+                if (window.__rexiStopScroll) { resolve(false); return; }
+                window.scrollBy(0, py);
+                if (elapsed < dur) requestAnimationFrame(tick);
+                else resolve(true);
+              };
+              requestAnimationFrame(tick);
+            });
+          }, { py: perFrame, dur: durationMs });
+        }
       } catch (e) {
         lastErr = e.message;
         // fallback: bánh xe chuột rời rạc
@@ -950,9 +1003,10 @@ class BrowserStreamService {
     };
   }
 
-  // Dừng cuộn liên tục (job rAF chạy nền)
+  // Dừng cuộn liên tục (job rAF/cdp chạy nền)
   async stopScrollContinuous() {
     if (!this._scrollJob) return { success: false, error: 'Không có tác vụ cuộn nào đang chạy.' };
+    this._scrollStop = true; // cho mode 'cdp' (vòng lặp Node) thoát
     try { await this.page.evaluate(() => { window.__rexiStopScroll = true; }); } catch (e) { /* ignore */ }
     this._scrollStopped = true;
     this._scrollJob = null;
