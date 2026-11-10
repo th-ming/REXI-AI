@@ -370,37 +370,53 @@ class BrowserStreamService {
     try {
       console.log('[BrowserStream] Launching chromium (bundled, headless — KHÔNG mở cửa sổ Chrome thật)...');
       const pw = getChromium();
-      // Dùng Chromium đi kèm Playwright (KHÔNG dùng channel:'chrome')
-      // → chạy 100% headless, không mở cửa sổ Chrome thật, không xung đột profile user, nhẹ hơn.
-      this.browser = await pw.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--disable-extensions',
-          '--disable-background-networking',
-          '--disable-default-apps',
-          '--disable-sync',
-          '--disable-translate',
-          '--metrics-recording-only',
-          '--mute-audio',
-          '--window-size=1280,720',
-          '--js-flags=--max-old-space-size=256',
-          '--disable-blink-features=AutomationControlled',
-          '--lang=vi-VN',
-        ],
-      }).catch(async (e) => {
-        // Fallback: launch tối giản nếu bộ args đầy đủ fail (vd: arg không hỗ trợ)
-        console.log('[BrowserStream] Default launch failed, retrying minimal:', e.message);
-        return await pw.launch({
-          headless: true,
-          args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--window-size=1280,720'],
-        });
-      });
+      const ARGS = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--window-size=1280,720',
+        '--js-flags=--max-old-space-size=256',
+        '--disable-blink-features=AutomationControlled',
+        '--lang=vi-VN',
+        // --- MƯỢT: bỏ giới hạn frame-rate, tắt vsync, không throttle khi tab ẩn ---
+        '--disable-gpu-vsync',
+        '--disable-frame-rate-limit',
+        '--run-all-compositor-stages-before-draw',
+        '--disable-features=CalculateNativeWinOcclusion',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-ipc-flooding-protection',
+        '--autoplay-policy=no-user-gesture-required',
+      ];
+      // Ưu tiên full Chromium (channel 'chromium' → new headless, có compositor thật)
+      // để Page.startScreencast sinh frame mượt; fallback về headless shell nếu thiếu bản full.
+      try {
+        this.browser = await pw.launch({ channel: 'chromium', headless: true, args: ARGS });
+        console.log('[BrowserStream] Launch OK — full chromium (new headless)');
+      } catch (e1) {
+        console.log('[BrowserStream] channel chromium fail -> headless shell:', e1.message);
+        try {
+          this.browser = await pw.launch({ headless: true, args: ARGS });
+          console.log('[BrowserStream] Launch OK — headless shell');
+        } catch (e2) {
+          console.log('[BrowserStream] Default launch failed, retrying minimal:', e2.message);
+          this.browser = await pw.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--window-size=1280,720'],
+          });
+        }
+      }
 
       const context = await this.browser.newContext({
         viewport: { width: 1280, height: 800 },

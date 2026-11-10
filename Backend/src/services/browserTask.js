@@ -98,7 +98,20 @@ class BrowserTaskRunner {
 
       try {
         const obs = await this._observe();
-        const decision = await this._decide(task, obs);
+        // Quyết định: thử lại nhiều lần (backoff) nếu provider lỗi/quota — KHÔNG đốt step.
+        let decision = null;
+        let lastErr = null;
+        for (let att = 0; att < 3 && !decision; att++) {
+          try {
+            decision = await this._decide(task, obs);
+            lastErr = null;
+          } catch (e) {
+            lastErr = e;
+            console.warn('[BrowserTask] quyết định lỗi (lần ' + (att + 1) + '):', e.message);
+            await new Promise((r) => setTimeout(r, 1200 * (att + 1)));
+          }
+        }
+        if (!decision) throw lastErr || new Error('Không lấy được quyết định từ LLM');
         thought = decision.thought || '';
         action = decision.action || { type: 'wait', amount: 300 };
 
@@ -176,8 +189,6 @@ class BrowserTaskRunner {
 
   // LLM quyết định hành động tiếp theo.
   async _decide(task, obs) {
-    const apiKey = await this.stream._getGroqKey();
-    if (!apiKey) throw new Error('Thiếu API key Groq cho Task Runner.');
     const elList = obs.els.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''}${e.href ? ' href=' + e.href : ''} @(${e.x},${e.y})${e.onScreen ? '' : ' (ngoài màn hình)'}`).join('\n');
 
     const system = 'Bạn là Agent điều khiển trình duyệt tự động, chạy tác vụ nhiều bước trong THỜI GIAN THỰC.\n' +
@@ -203,26 +214,56 @@ class BrowserTaskRunner {
       'PHẦN TỬ TƯƠNG TÁC:\n' + (elList || '(không thấy)') + '\n\n' +
       'NỘI DUNG ĐANG NHÌN THẤY:\n' + (obs.vp.slice(0, 1500) || '(trống)');
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
-      body: JSON.stringify({
-        model: 'openai/gpt-oss-120b',
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-        response_format: { type: 'json_schema', json_schema: { name: 'browser_step', schema: ACTION_SCHEMA } },
-        temperature: 0.2,
-      }),
-    });
-    if (!res.ok) throw new Error('Groq HTTP ' + res.status);
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    let obj = {};
-    try { obj = JSON.parse(content); } catch (e) {
-      const m = content.match(/\{[\s\S]*\}/);
-      if (m) { try { obj = JSON.parse(m[0]); } catch (e2) { /* ignore */ } }
+    const fullPrompt = system + '\n\n' + user +
+      '\n\nCHỈ trả về MỘT đối tượng JSON đúng schema sau, không thêm chữ khác:\n' +
+      JSON.stringify({ thought: '<câu>', done: false, summary: '<khi done>', action: { type: 'click|clickAt|type|press|scroll|goto|wait|read|vision', selector: '', text: '', key: '', direction: '', url: '', x: 0, y: 0, amount: 0 } });
+
+    // 1) Groq với JSON schema (nhanh, chuẩn JSON)
+    try {
+      const apiKey = await this.stream._getGroqKey();
+      if (apiKey) {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+          body: JSON.stringify({
+            model: 'openai/gpt-oss-120b',
+            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+            response_format: { type: 'json_schema', json_schema: { name: 'browser_step', schema: ACTION_SCHEMA } },
+            temperature: 0.2,
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          const obj = this._parseJson(content);
+          if (obj && obj.action && obj.action.type) return obj;
+          throw new Error('Groq trả về JSON không hợp lệ');
+        }
+        throw new Error('Groq HTTP ' + res.status);
+      }
+    } catch (e) {
+      console.warn('[BrowserTask] Groq fail, chuyển provider khác:', e.message);
     }
-    if (!obj.action || !obj.action.type) throw new Error('LLM không trả về hành động hợp lệ');
+
+    // 2) Chuỗi provider dự phòng (xkiro → groq → unorouter → kiosapi) qua agentService.callAI
+    const { callAI } = require('./agentService');
+    const txt = await callAI(fullPrompt);
+    const obj = this._parseJson(txt);
+    if (!obj || !obj.action || !obj.action.type) throw new Error('LLM không trả về hành động hợp lệ');
     return obj;
+  }
+
+  // Bóc JSON từ text (chịu ```json fences và text thừa).
+  _parseJson(text) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const raw = fence ? fence[1] : t;
+    try { return JSON.parse(raw); } catch (e) { /* noop */ }
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) { try { return JSON.parse(m[0]); } catch (e2) { /* noop */ } }
+    return null;
   }
 
   // Thực thi 1 hành động — nhanh, không chờ cứng.
