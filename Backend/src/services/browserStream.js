@@ -47,6 +47,11 @@ class BrowserStreamService {
     this._frameSubs = new Set();    // subscriber nhận frame BINARY (không base64)
     this._lastFrameBuf = null;      // frame JPEG thô gần nhất
     this._frameBoundary = Buffer.from('\r\n--frame\r\nContent-Type: image/jpeg\r\n\r\n');
+    // Frame pacing: Chromium đẩy frame theo burst. Giữ frame MỚI NHẤT trong
+    // _pendingFrame, timer drain đều theo fps mục tiêu → không mất frame trong burst.
+    this._pendingFrame = null;
+    this._paceTimer = null;
+    this._lastCdpAt = 0;
   }
 
   setWSS(wss) {
@@ -139,25 +144,50 @@ class BrowserStreamService {
     this.startScreencast().catch((e) => console.error('[BrowserStream] screencast init:', e.message));
   }
 
+  // Timer drain frame — nhịp đều theo fps mục tiêu, luôn lấy frame MỚI NHẤT.
+  // Tách riêng để đổi fps có thể restart nhịp mà không cần restart screencast.
+  _startPacing() {
+    if (this._paceTimer) { clearInterval(this._paceTimer); this._paceTimer = null; }
+    const interval = Math.max(10, Math.round(1000 / (this.streamOpts.fps || 15)));
+    this._paceTimer = setInterval(() => {
+      if (!this._pendingFrame) return;
+      const data = this._pendingFrame;
+      this._pendingFrame = null;
+      this._pendingFrameReplaced = false;
+      this._lastFrameTs = Date.now();
+      this._lastFrameAt = this._lastFrameTs;
+      this._stat.sent++;
+      try { this._sendFrame(data); } catch (e) {}
+    }, interval);
+    console.log('[BrowserStream] Pacing ON @' + interval + 'ms (' + Math.round(1000 / interval) + ' fps target)');
+  }
+
   // Bật screencast event-driven. Frames đẩy qua _sendFrame() tới cả SSE subscribers lẫn WS clients.
   async startScreencast() {
     if (this._screencastOn || !this.cdpSession) return;
     try {
       if (!this._screencastHandler) {
         this._screencastHandler = async (params) => {
-          // Phải ACK mỗi frame, nếu không Chromium ngừng gửi frame tiếp.
-          try { await this.cdpSession.send('Page.screencastFrameAck', { sessionId: params.sessionId }); } catch (e) {}
+          // Phải ACK mọi frame, nếu không Chromium ngừng gửi frame tiếp.
+          // ACK gửi KHÔNG await: Chromium chỉ cần byte ack tới, không cần response.
+          // Await ở đây chặn cả handler → nghẽn nhịp frame.
+          this.cdpSession.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
           this._encodeCount++;
           this._stat.cdp++;
-          const now = Date.now();
-          const minGap = 1000 / (this.streamOpts.fps || 15);
-          if (now - this._lastFrameTs < minGap) { this._droppedFrames++; this._stat.throttled++; return; } // throttle tới fps mục tiêu
-          this._lastFrameTs = now;
-          this._lastFrameAt = now;
-          this._sendFrame(params.data);
+          this._lastCdpAt = Date.now();
+          // KHÔNG gửi thẳng ở đây. Chromium đẩy frame theo BURST (nhiều frame
+          // dồn trong vài ms). Nếu throttle bằng "cách frame trước < minGap" thì
+          // trong 1 burst chỉ 1 frame sống sót → mất ~58% throughput.
+          // Thay vào đó: giữ frame MỚI NHẤT, timer drain đều theo fps mục tiêu.
+          this._pendingFrame = params.data;
+          if (this._pendingFrameReplaced) { this._stat.throttled++; this._droppedFrames++; }
+          this._pendingFrameReplaced = true;
         };
         this.cdpSession.on('Page.screencastFrame', this._screencastHandler);
       }
+      // Timer drain: 1 frame mỗi nhịp 1/fps, luôn lấy frame MỚI NHẤT.
+      // Nhịp đều, không phụ thuộc burst pattern của compositor.
+      this._startPacing();
       // everyNthFrame: Chromium BỎ QUA frame trước khi encode → giảm tải CPU encode JPEG.
       // QUAN TRỌNG: nhịp thực của compositor trên Render free (software raster) KHÔNG phải 60/s.
       // Nếu đặt everyNthFrame=4 theo giả định 60fps thì khi compositor chỉ chạy ~5fps
@@ -198,9 +228,10 @@ class BrowserStreamService {
       if (idle < 1500) return;
       try {
         const r = await this.cdpSession.send('Page.captureScreenshot', { format: 'jpeg', quality: this.streamOpts.quality });
+        // Đi qua hàng đợi pacing để nhịp gửi đều (không chen vào giữa 2 frame).
+        this._pendingFrame = r.data;
+        this._pendingFrameReplaced = false;
         this._lastFrameAt = Date.now();
-        this._lastFrameTs = this._lastFrameAt;
-        this._sendFrame(r.data);
       } catch (e) { /* ignore */ }
     }, 1200);
   }
@@ -211,6 +242,8 @@ class BrowserStreamService {
 
   async stopScreencast() {
     if (this._fallbackInterval) { clearInterval(this._fallbackInterval); this._fallbackInterval = null; }
+    if (this._paceTimer) { clearInterval(this._paceTimer); this._paceTimer = null; }
+    this._pendingFrame = null;
     this._stopKeepAlive();
     if (!this._screencastOn || !this.cdpSession) { this._screencastOn = false; return; }
     try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
@@ -273,6 +306,13 @@ class BrowserStreamService {
       this._lastFrameTs = 0;
       await this.startScreencast();
     }
+    // Đổi fps → đổi nhịp timer drain (frame pacing).
+    if (this._paceTimer) {
+      clearInterval(this._paceTimer);
+      this._paceTimer = null;
+      this._pendingFrame = null;
+      this._startPacing();
+    }
     // Báo lại opts cho FE (viewport đổi → FE phải đổi cách ánh xạ click).
     this._sendEvent({ type: 'hello', stream: 'screencast', opts: this.streamOpts });
     return this.streamOpts;
@@ -325,7 +365,6 @@ class BrowserStreamService {
       });
     }
     this.clients.forEach((c) => { try { if (c.readyState === WebSocket.OPEN) c.send(`data: ${JSON.stringify({ type: 'frame', data: `data:${mime};base64,${b64}`, ts: Date.now() })}\n\n`); } catch (e) {} });
-    this._stat.sent++;
     this._stat.bytes += buf.length;
   }
 
