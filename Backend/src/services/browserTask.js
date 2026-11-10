@@ -232,14 +232,14 @@ class BrowserTaskRunner {
 
   // LLM quyết định hành động tiếp theo.
   async _decide(task, obs) {
-    const elList = obs.els.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''}${e.href ? ' href=' + e.href : ''} @(${e.x},${e.y})${e.onScreen ? '' : ' (ngoài màn hình)'}`).join('\n');
+    const elList = obs.els.map((e, i) => `${i + 1}. <${e.tag}${e.role ? ' role=' + e.role : ''}> "${e.text}"${e.id ? ' id=' + e.id : ''}${e.name ? ' name=' + e.name : ''}${e.href ? ' href=' + e.href : ''}${e.ref ? ' selector=' + e.ref : ''} @(${e.x},${e.y})${e.onScreen ? '' : ' (ngoài màn hình)'}`).join('\n');
 
     const system = 'Bạn là Agent điều khiển trình duyệt tự động, chạy tác vụ nhiều bước trong THỜI GIAN THỰC.\n' +
       'Mỗi lần chỉ được chọn ĐÚNG MỘT hành động để tiến triển. Ưu tiên hành động nhỏ, đúng, kiểm chứng được.\n' +
       'QUY TẮC:\n' +
-      '- Muốn bấm phần tử trong danh sách → {"type":"click","selector":"<selector>"}; link nhiều chữ → dùng a[href="<href>"].\n' +
+      '- Bấm phần tử trong danh sách → {"type":"click","selector":"<selector>"}. MỖI phần tử trong danh sách đã kèm "selector=..." → DÙNG CHÍNH XÁC chuỗi đó (đáng tin nhất). Link nhiều chữ cũng có thể dùng a[href="<href>"].\n' +
       '- Phần tử canvas/không nhãn → {"type":"clickAt","x":..,"y":..}.\n' +
-      '- Gõ vào ô → {"type":"type","selector":..,"text":..}; phím → {"type":"press","key":"Enter"}.\n' +
+      '- Gõ vào ô → {"type":"type","selector":"<selector đã cho của ô nhập>","text":..}; phím → {"type":"press","key":"Enter"}. DÙNG ĐÚNG "selector" của ô trong danh sách, KHÔNG tự bịa kiểu "input[type=text]" (dễ không khớp → lỗi).\n' +
       'GÕ RỒI GỬI LUÔN trong 1 bước (vd điền đáp án + Enter): {"type":"type","text":"<giá trị>","key":"Enter"}.\n' +
       '- Cuộn → {"type":"scroll","direction":"down","amount":600}.\n' +
       '- Đọc nội dung đang hiển thị (text) → {"type":"read"} — dùng khi cần trích câu trả lời/tên mục.\n' +
@@ -365,8 +365,17 @@ class BrowserTaskRunner {
           return { ok: true, message: `Đã bấm (${a.x},${a.y})` };
         }
         case 'type': {
-          if (a.selector) await page.locator(a.selector).first().fill(a.text || '', { timeout: 5000 });
-          else await page.keyboard.type(a.text || '');
+          let typed = false;
+          if (a.selector) {
+            try { await page.locator(a.selector).first().fill(a.text || '', { timeout: 3000 }); typed = true; }
+            catch (eSel) { /* selector sai/không khớp → thử ô nhập chung bên dưới */ }
+          }
+          if (!typed) {
+            // Dự phòng: ô nhập đang hiển thị (ưu tiên ô đang focus rồi ô trống) — tránh chết vì selector bịa.
+            const gen = page.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]), textarea').first();
+            try { await gen.fill(a.text || '', { timeout: 2500 }); typed = true; } catch (e2) { /* ignore */ }
+          }
+          if (!typed) await page.keyboard.type(a.text || '');
           // Gõ + nhấn phím trong CÙNG 1 bước (vd điền đáp án rồi Enter để gửi) — giảm nửa số bước.
           if (a.key) {
             await page.keyboard.press(a.key);

@@ -879,6 +879,11 @@ class BrowserStreamService {
           let label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.value ||
             el.innerText || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\s+/g, ' ');
           if (label.length > 60) label = label.slice(0, 60);
+          // Gắn ref ĐÁNG TIN cho từng phần tử → LLM dùng đúng chuỗi này thay vì tự bịa selector
+          // (trước đây model bịa 'input[type=text]' cho ô <input> không có attr type → fill timeout).
+          const idx = out.length;
+          const ref = '[data-agent-el="' + idx + '"]';
+          try { el.setAttribute('data-agent-el', String(idx)); } catch (e) { /* ignore */ }
           out.push({
             tag: el.tagName.toLowerCase(),
             role: el.getAttribute('role') || '',
@@ -886,6 +891,7 @@ class BrowserStreamService {
             id: el.id || '',
             name: el.getAttribute('name') || '',
             href: el.tagName === 'A' ? (el.getAttribute('href') || '') : '',
+            ref,
             x: Math.round(r.left + r.width / 2),
             y: Math.round(r.top + r.height / 2),
             onScreen,
