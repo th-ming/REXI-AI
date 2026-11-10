@@ -182,13 +182,18 @@ class BrowserStreamService {
     }
   }
 
+  // Có ai đang xem không? (SSE subscriber + WS client + kênh frame BINARY)
+  _hasConsumers() {
+    return this.subscribers.size > 0 || this.clients.size > 0 || this._frameSubs.size > 0;
+  }
+
   // Keepalive: trang tĩnh không sinh frame mới → compositor ngừng đẩy → client tưởng chết.
   // Cứ mỗi 1.5s nếu không có frame nào mới → chụp 1 tấm bằng CDP để đẩy cho client.
   _startKeepAlive() {
     if (this._keepAliveTimer) return;
     this._keepAliveTimer = setInterval(async () => {
       if (!this._screencastOn) return;
-      if (this.subscribers.size === 0 && this.clients.size === 0) return;
+      if (!this._hasConsumers()) return;
       const idle = Date.now() - (this._lastFrameAt || 0);
       if (idle < 1500) return;
       try {
@@ -216,7 +221,7 @@ class BrowserStreamService {
   _startFallbackFrames() {
     if (this._fallbackInterval) return;
     this._fallbackInterval = setInterval(async () => {
-      if (!this.page || (this.subscribers.size === 0 && this.clients.size === 0)) return;
+      if (!this.page || !this._hasConsumers()) return;
       try {
         let b64 = null;
         if (this.cdpSession) {
@@ -405,7 +410,7 @@ class BrowserStreamService {
   _scheduleAutoClose() {
     if (this._autoCloseTimer) clearTimeout(this._autoCloseTimer);
     this._autoCloseTimer = setTimeout(async () => {
-      if (this.clients.size === 0 && this.browser) {
+      if (!this._hasConsumers() && this.browser) {
         console.log('[BrowserStream] Auto-closing browser — no clients for 60s');
         await this.close();
       }
@@ -1128,6 +1133,7 @@ class BrowserStreamService {
       stream: {
         ...this.streamOpts,
         subscribers: this.subscribers.size,
+        frameSubs: this._frameSubs.size,
         screencast: this._screencastOn,
         droppedFrames: this._droppedFrames,
         encodedFrames: this._encodeCount,

@@ -3059,6 +3059,8 @@ router.get('/browser/stream-frames', async (req, res) => {
 
   // Đăng ký vào kênh binary: _sendFrame() tự đẩy từng frame mới (không poll).
   browserStream._frameSubs.add(res);
+  browserStream._resetAutoClose();
+  await browserStream.startScreencast();
 
   const ka = setInterval(() => { try { if (!res.writableEnded && !res.destroyed) res.write('\r\n'); } catch (e) {} }, 15000);
   const cleanup = () => {
@@ -3174,6 +3176,7 @@ router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
   try {
     const { quality, fps, maxWidth, maxHeight, everyNthFrame, scale, viewportWidth, viewportHeight } = req.body || {};
     const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight, everyNthFrame, scale, viewportWidth, viewportHeight });
+    browserStream._resetAutoClose();
     res.json({ success: true, opts });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
