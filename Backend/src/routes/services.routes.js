@@ -3000,29 +3000,32 @@ router.get('/browser/stream-sse', async (req, res) => {
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
-  res.write(`data: ${JSON.stringify({ type: 'hello' })}\n\n`);
-  console.log('[SSE] Browser stream client connected, user:', user.id || user.email);
-
-  let closed = false;
-  req.on('close', () => { closed = true; });
+  res.write(`data: ${JSON.stringify({ type: 'hello', stream: 'screencast', opts: browserStream.streamOpts })}\n\n`);
+  console.log('[SSE] Browser stream client connected (screencast), user:', user.id || user.email);
 
   // Tự launch browser khi client kết nối (nếu chưa có)
   if (!browserStream.page && !browserStream.browser) {
     browserStream.launch().catch(e => console.error('[SSE] Auto-launch error:', e.message));
   }
 
-  const interval = setInterval(async () => {
-    if (closed || res.writableEnded) { clearInterval(interval); return; }
-    try {
-      const shot = await browserStream.debugFrame();
-      if (closed) return;
-      if (shot.success) {
-        res.write(`data: ${JSON.stringify({ type: 'frame', data: `data:image/jpeg;base64,${shot.b64}` })}\n\n`);
-      }
-    } catch (e) {
-      // bỏ frame lỗi, không chết stream
-    }
-  }, 600);
+  // Push model: server đẩy frame qua kênh này (CDP screencast), client KHÔNG còn poll.
+  browserStream.addSubscriber(res).catch(e => console.error('[SSE] addSubscriber:', e.message));
+
+  // Keepalive để proxy (Render/Cloudflare) không cắt kết nối khi trang tĩnh không có frame.
+  const ka = setInterval(() => {
+    try { if (!res.writableEnded && !res.destroyed) res.write(': keepalive\n\n'); } catch (e) {}
+  }, 15000);
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return; cleaned = true;
+    clearInterval(ka);
+    browserStream.removeSubscriber(res);
+    console.log('[SSE] Browser stream client disconnected');
+  };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+  res.on('finish', cleanup);
 });
 
 // GET: self-test WS từ TRONG instance qua localhost — tách thủ phạm (server vs proxy ngoài)
@@ -3058,6 +3061,35 @@ router.post('/browser/act', authMiddleware, async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+// POST: chỉnh thông số stream (chất lượng/fps/kích thước) — "mượt hơn" hoặc "nhẹ hơn"
+router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
+  try {
+    const { quality, fps, maxWidth, maxHeight } = req.body || {};
+    const opts = await browserStream.setStreamOpts({ quality, fps, maxWidth, maxHeight });
+    res.json({ success: true, opts });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Di chuột liên tục (hover/kéo) — thao tác mượt cho game/canvas
+router.post('/browser/move', authMiddleware, async (req, res) => {
+  try {
+    const { x, y, steps } = req.body || {};
+    const result = await browserStream.mouseMove(Number(x), Number(y), Number(steps) || 1);
+    res.json(result);
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Nhấn/thả chuột rời (giữ chuột để kéo/thao tác game)
+router.post('/browser/mouse', authMiddleware, async (req, res) => {
+  try {
+    const { action, x, y, button } = req.body || {};
+    const result = await browserStream.mouseButton(action, Number(x), Number(y), button);
+    res.json(result);
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

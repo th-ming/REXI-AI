@@ -25,6 +25,13 @@ class BrowserStreamService {
     this.stagehand = null;
     this._autoCloseTimer = null;
     this._frameSkipCounter = 0;
+    this.subscribers = new Set();          // SSE response streams (push frames)
+    this._screencastOn = false;
+    this._screencastHandler = null;
+    this._fallbackInterval = null;
+    this.streamOpts = { quality: 55, maxWidth: 1280, maxHeight: 720, fps: 20 };
+    this._lastFrameTs = 0;
+    this._droppedFrames = 0;
   }
 
   setWSS(wss) {
@@ -112,41 +119,112 @@ class BrowserStreamService {
       }
     });
 
-    // Capture frames at ~2fps (was 30fps — 93% reduction in CPU/GC pressure)
-    if (this.frameInterval) clearInterval(this.frameInterval);
-    this.frameInterval = setInterval(async () => {
-      if (!this.page || this.clients.size === 0) return;
+    // Frame mượt: CDP Page.startScreencast (event-driven, ~fps cấu hình) thay vì setInterval chụp 2fps.
+    // Chỉ chạy khi có người xem (subscribers/clients) — không tốn CPU khi rảnh.
+    this.startScreencast().catch((e) => console.error('[BrowserStream] screencast init:', e.message));
+  }
 
-      try {
-        let screenshot;
-        // CDP session hoạt động ổn định hơn page.screenshot() với headless-shell
-        if (this.cdpSession) {
-          try {
-            const result = await this.cdpSession.send('Page.captureScreenshot', { format: 'jpeg', quality: 40 });
-            screenshot = Buffer.from(result.data, 'base64');
-          } catch (cdpErr) {
-            // Fallback sang page.screenshot() nếu CDP fail
-            screenshot = await this.page.screenshot({ type: 'jpeg', quality: 40 });
-          }
-        } else {
-          screenshot = await this.page.screenshot({ type: 'jpeg', quality: 40 });
-        }
-
-        const frameData = `data:image/jpeg;base64,${screenshot.toString('base64')}`;
-        const message = JSON.stringify({ type: 'frame', data: frameData });
-
-        let sent = 0;
-        this.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-            sent++;
-          }
-        });
-      } catch (e) {
-        console.error('[FrameCapture] Error:', e.message);
+  // Bật screencast event-driven. Frames đẩy qua _sendFrame() tới cả SSE subscribers lẫn WS clients.
+  async startScreencast() {
+    if (this._screencastOn || !this.cdpSession) return;
+    try {
+      if (!this._screencastHandler) {
+        this._screencastHandler = async (params) => {
+          // Phải ACK mỗi frame, nếu không Chromium ngừng gửi frame tiếp.
+          try { await this.cdpSession.send('Page.screencastFrameAck', { sessionId: params.sessionId }); } catch (e) {}
+          const now = Date.now();
+          const minGap = 1000 / (this.streamOpts.fps || 20);
+          if (now - this._lastFrameTs < minGap) { this._droppedFrames++; return; } // throttle tới fps mục tiêu
+          this._lastFrameTs = now;
+          this._sendFrame(params.data);
+        };
+        this.cdpSession.on('Page.screencastFrame', this._screencastHandler);
       }
-    }, 500); // 2fps thay vì 30fps
-    console.log('[BrowserStream] frameInterval started (2fps mode — RAM optimized)');
+      await this.cdpSession.send('Page.startScreencast', {
+        format: 'jpeg',
+        quality: this.streamOpts.quality,
+        maxWidth: this.streamOpts.maxWidth,
+        maxHeight: this.streamOpts.maxHeight,
+        everyNthFrame: 1,
+      });
+      this._screencastOn = true;
+      if (this._fallbackInterval) { clearInterval(this._fallbackInterval); this._fallbackInterval = null; }
+      console.log('[BrowserStream] Screencast ON', JSON.stringify(this.streamOpts));
+    } catch (e) {
+      console.error('[BrowserStream] startScreencast failed, dùng fallback:', e.message);
+      this._startFallbackFrames();
+    }
+  }
+
+  async stopScreencast() {
+    if (this._fallbackInterval) { clearInterval(this._fallbackInterval); this._fallbackInterval = null; }
+    if (!this._screencastOn || !this.cdpSession) { this._screencastOn = false; return; }
+    try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
+    this._screencastOn = false;
+  }
+
+  // Fallback nếu startScreencast không hỗ trợ: poll ~10fps (vẫn mượt hơn 2fps cũ).
+  _startFallbackFrames() {
+    if (this._fallbackInterval) return;
+    this._fallbackInterval = setInterval(async () => {
+      if (!this.page || (this.subscribers.size === 0 && this.clients.size === 0)) return;
+      try {
+        let b64 = null;
+        if (this.cdpSession) {
+          try { const r = await this.cdpSession.send('Page.captureScreenshot', { format: 'jpeg', quality: this.streamOpts.quality }); b64 = r.data; } catch (e) {}
+        }
+        if (!b64) { const buf = await this.page.screenshot({ type: 'jpeg', quality: this.streamOpts.quality }); b64 = buf.toString('base64'); }
+        this._sendFrame(b64);
+      } catch (e) { /* bỏ frame lỗi */ }
+    }, Math.max(1000 / (this.streamOpts.fps || 10), 66));
+    console.log('[BrowserStream] fallback frame interval ON (~' + this.streamOpts.fps + 'fps)');
+  }
+
+  // Đổi thông số stream (quality/fps/kích thước) — restart screencast nếu đang chạy.
+  async setStreamOpts(opts = {}) {
+    if (typeof opts.quality === 'number') this.streamOpts.quality = Math.max(20, Math.min(90, opts.quality | 0));
+    if (typeof opts.fps === 'number') this.streamOpts.fps = Math.max(1, Math.min(60, opts.fps | 0));
+    if (typeof opts.maxWidth === 'number') this.streamOpts.maxWidth = opts.maxWidth | 0;
+    if (typeof opts.maxHeight === 'number') this.streamOpts.maxHeight = opts.maxHeight | 0;
+    if (this._screencastOn) {
+      try { await this.cdpSession.send('Page.stopScreencast'); } catch (e) {}
+      this._screencastOn = false;
+      this._lastFrameTs = 0;
+      await this.startScreencast();
+    }
+    return this.streamOpts;
+  }
+
+  // Đăng ký 1 SSE response làm người nhận frame (push thay vì client poll).
+  async addSubscriber(res) {
+    this.subscribers.add(res);
+    this._resetAutoClose();
+    await this.startScreencast();
+    // Gửi ngay 1 frame hiện tại để client không thấy màn hình trống khi trang tĩnh.
+    try {
+      const shot = await this.debugFrame();
+      if (shot.success && !res.writableEnded && !res.destroyed) {
+        res.write(`data: ${JSON.stringify({ type: 'frame', data: `data:image/jpeg;base64,${shot.b64}`, ts: Date.now() })}\n\n`);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  removeSubscriber(res) {
+    this.subscribers.delete(res);
+    if (this.subscribers.size === 0 && this.clients.size === 0) this._scheduleAutoClose();
+  }
+
+  // Phát 1 frame tới mọi kênh; bỏ frame cho client chậm (backpressure) để không dồn RAM.
+  _sendFrame(b64, mime = 'image/jpeg') {
+    const message = JSON.stringify({ type: 'frame', data: `data:${mime};base64,${b64}`, ts: Date.now() });
+    this.clients.forEach((c) => { try { if (c.readyState === WebSocket.OPEN) c.send(message); } catch (e) {} });
+    this.subscribers.forEach((res) => {
+      try {
+        if (res.writableEnded || res.destroyed) { this.subscribers.delete(res); return; }
+        if (res.writableLength > 3 * 1024 * 1024) { this._droppedFrames++; return; } // client tắc nghẽn → bỏ frame
+        res.write(`data: ${message}\n\n`);
+      } catch (e) { this.subscribers.delete(res); }
+    });
   }
 
   _scheduleAutoClose() {
@@ -241,6 +319,10 @@ class BrowserStreamService {
 
       await this.cdpSession.send('Page.enable');
       // Bỏ Animation.enable — không cần, tiết kiệm memory
+      // Nếu đã có người xem (SSE/WS mở trước khi launch) → bật screencast ngay.
+      if (this.subscribers.size > 0 || this.clients.size > 0) {
+        this.startScreencast().catch(() => {});
+      }
     } catch (e) {
       console.error('[BrowserStream] Launch failed:', e.message);
       this.browser = null;
@@ -596,6 +678,22 @@ class BrowserStreamService {
     return { success: true };
   }
 
+  async mouseMove(x, y, steps = 1) {
+    if (!this.page) await this.launch();
+    await this.page.mouse.move(Number(x) || 0, Number(y) || 0, { steps: Math.max(1, steps | 0) });
+    return { success: true };
+  }
+
+  async mouseButton(action, x, y, button = 'left') {
+    if (!this.page) await this.launch();
+    if (typeof x === 'number' && typeof y === 'number' && !Number.isNaN(x) && !Number.isNaN(y)) {
+      await this.page.mouse.move(x, y);
+    }
+    if (action === 'down') await this.page.mouse.down({ button });
+    else if (action === 'up') await this.page.mouse.up({ button });
+    return { success: true };
+  }
+
   async type(text) {
     if (!this.page) await this.launch();
     await this.page.keyboard.type(text);
@@ -623,6 +721,14 @@ class BrowserStreamService {
       clearInterval(this.frameInterval);
       this.frameInterval = null;
     }
+    try { await this.stopScreencast(); } catch (e) { /* ignore */ }
+    this._screencastOn = false;
+    if (this._screencastHandler && this.cdpSession) {
+      try { this.cdpSession.off('Page.screencastFrame', this._screencastHandler); } catch (e) { /* ignore */ }
+    }
+    this._screencastHandler = null;
+    this.subscribers.forEach((res) => { try { if (!res.writableEnded) res.end(); } catch (e) {} });
+    this.subscribers.clear();
     // Mỗi bước độc lập — 1 bước fail không chặn bước sau (tránh browser kẹt không đóng được → "toggle lỗi")
     if (this.cdpSession) {
       try { await this.cdpSession.detach(); } catch (e) { console.log('[close] cdp detach:', e.message); }
@@ -662,6 +768,12 @@ class BrowserStreamService {
       clients: this.clients.size,
       totalConnections: this._totalConnections || 0,
       stagehand: !!this.stagehand,
+      stream: {
+        ...this.streamOpts,
+        subscribers: this.subscribers.size,
+        screencast: this._screencastOn,
+        droppedFrames: this._droppedFrames,
+      },
     };
   }
 
