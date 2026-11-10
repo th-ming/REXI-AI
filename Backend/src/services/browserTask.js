@@ -126,6 +126,7 @@ class BrowserTaskRunner {
         let lastErr = null;
         const auto = this._detectArithmetic(obs);
         if (auto && (task.macroRuns || 0) < 8) {
+          console.log('[BrowserTask] macro TỰ ĐỘNG (phát hiện game toán) ms=' + auto.ms + ' ref=' + (auto.ref || '-'));
           decision = {
             thought: 'Trang là game toán (thấy phép tính + ô nhập) — tự động giải liên tục.',
             done: false,
@@ -615,12 +616,14 @@ class BrowserTaskRunner {
     if (!/-?\d+\s*[+\-\u2212\u2013\u2014\u00d7x*\u00f7/]\s*-?\d+/.test(vp)) return null;
     const els = (obs && obs.els) || [];
     const inputEl = els.find((e) => e.tag === 'input');
-    if (!inputEl) return null;
+    const hasTimer = /seconds\s*left/i.test(vp);
+    // Cần ô nhập (đáp án) HOẶC đồng hồ "Seconds left" — tin cậy cả khi _interactiveMap không bắt kịp ô nhập.
+    if (!inputEl && !hasTimer) return null;
     const ctx = (String(obs.url || '') + ' ' + String(obs.title || '') + ' ' + String(this.task.goal || '')).toLowerCase();
     if (!/zetamac|arith|\bmath\b|to[aá]n|game|quiz|drill|ph[eé]p t[ií]nh|speed|s[oố] h[oọ]c/.test(ctx)) return null;
     const m = vp.match(/seconds\s*left:\s*(\d+)/i);
     const ms = m ? Math.min(120000, Number(m[1]) * 1000 + 2500) : 25000;
-    return { ms, ref: inputEl.ref || '' };
+    return { ms, ref: inputEl ? (inputEl.ref || '') : '' };
   }
 
   // MACRO: tự đọc biểu thức số học đang hiển thị, tính và gõ đáp án LIÊN TỤC trong `ms` (game/quiz toán).
