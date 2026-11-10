@@ -235,10 +235,11 @@ class BrowserTaskRunner {
       '- Muốn bấm phần tử trong danh sách → {"type":"click","selector":"<selector>"}; link nhiều chữ → dùng a[href="<href>"].\n' +
       '- Phần tử canvas/không nhãn → {"type":"clickAt","x":..,"y":..}.\n' +
       '- Gõ vào ô → {"type":"type","selector":..,"text":..}; phím → {"type":"press","key":"Enter"}.\n' +
+      'GÕ RỒI GỬI LUÔN trong 1 bước (vd điền đáp án + Enter): {"type":"type","text":"<giá trị>","key":"Enter"}.\n' +
       '- Cuộn → {"type":"scroll","direction":"down","amount":600}.\n' +
       '- Đọc nội dung đang hiển thị (text) → {"type":"read"} — dùng khi cần trích câu trả lời/tên mục.\n' +
-      '- TÌM một mục/đoạn có tên trên trang (kể cả mục lục bị thu gọn) → {"type":"find","text":"History"}. ' +
-      'Đây là cách ĐÚNG để tới thẳng một chuyên mục; ĐỪNG cuộn mù tìm chữ.\n' +
+      '- TÌM & BẤM một mục/đoạn/NÚT có tên trên trang (kể cả mục lục bị thu gọn, hoặc nút như "Start") → {"type":"find","text":"Start"}. ' +
+      'find TỰ BẤM nếu khớp là nút/submit, hoặc nhảy tới nếu là chuyên mục; ĐỪNG cuộn mù tìm chữ và ĐỪNG giả vờ không thấy nút.\n' +
       '- Cần đọc hình/canvas/game → {"type":"vision","text":"<câu hỏi cụ thể>"} (chỉ khi thật sự cần).\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
       'CÁCH TÌM CHUYÊN MỤC: xem "BẢN ĐỒ TRANG" (danh sách mục/anchor). Nếu mục tiêu nhắc tới một mục ' +
@@ -357,6 +358,12 @@ class BrowserTaskRunner {
         case 'type': {
           if (a.selector) await page.locator(a.selector).first().fill(a.text || '', { timeout: 5000 });
           else await page.keyboard.type(a.text || '');
+          // Gõ + nhấn phím trong CÙNG 1 bước (vd điền đáp án rồi Enter để gửi) — giảm nửa số bước.
+          if (a.key) {
+            await page.keyboard.press(a.key);
+            await this._afterNav();
+            return { ok: true, message: 'Đã gõ + nhấn ' + a.key };
+          }
           return { ok: true, message: 'Đã gõ' };
         }
         case 'press': {
@@ -391,30 +398,50 @@ class BrowserTaskRunner {
           return { ok: true, message: 'Chờ' };
         }
         case 'find': {
-          // Tìm mục/đoạn có tên trong bài (kể cả anchor đang bị ẩn) rồi nhảy tới.
-          // Deterministic — không phụ thuộc agent cuộn mù.
+          // Tìm mục/đoạn/NÚT có tên trên trang (kể cả anchor đang bị ẩn) rồi nhảy tới HOẶC bấm.
+          // Deterministic — không phụ thuộc agent cuộn mù. Nút/submit khớp nhãn → TỰ BẤM.
           const needle = String(a.text || '').trim();
           if (!needle) return { ok: false, error: 'thiếu text để tìm' };
           const r = await page.evaluate((needle) => {
             const low = needle.toLowerCase();
             const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim();
-            // Điểm ưu tiên: khớp NGẮN/GỌI-TÊN-CỤ-THỂ hơn là container chứa cả cây.
-            // heading > anchor > container; ngắn hơn > dài hơn; có id > không.
+            const isControl = (el) => {
+              const tag = el.tagName.toLowerCase();
+              if (tag === 'button') return true;
+              if (tag === 'input') {
+                const ty = (el.getAttribute('type') || '').toLowerCase();
+                return ty === 'submit' || ty === 'button' || ty === 'reset';
+              }
+              return (el.getAttribute('role') || '') === 'button';
+            };
+            // Nhãn hiển thị: input lấy value/aria/placeholder; còn lại lấy text/aria/title.
+            const label = (el) => {
+              const tag = el.tagName.toLowerCase();
+              if (tag === 'input') return norm(el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '');
+              return norm(el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '');
+            };
+            // Điểm ưu tiên: NÚT > heading > anchor > container; ngắn hơn > dài hơn; có id > không.
             const score = (el) => {
-              const t = norm(el.textContent).toLowerCase();
+              const t = label(el).toLowerCase();
               if (!t || t.length > 160 || !t.includes(low)) return -1;
               const tag = el.tagName.toLowerCase();
               let s = 1000 - t.length;
-              if (/^h[1-6]$/.test(tag)) s += 600;
+              if (isControl(el)) s += 900;
+              else if (/^h[1-6]$/.test(tag)) s += 600;
               else if (tag === 'a') s += 300;
               if (el.id) s += 120;
               return s;
             };
-            const cands = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,a[href^="#"],dt,li,p'));
+            const cands = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,a[href^="#"],dt,li,p,button,input[type="submit"],input[type="button"],input[type="reset"],[role="button"]'));
             let best = null, bestS = 0;
             for (const el of cands) { const s = score(el); if (s > bestS) { bestS = s; best = el; } }
             if (!best) return null;
-            // Node đích để nhảy: anchor #id → phần tử id đó; ngược lại → tổ tiên có id gần nhất.
+            // Dọn marker cũ, đánh dấu phần tử thắng để Playwright bấm bằng locator thật.
+            document.querySelectorAll('[data-agent-find]').forEach((e) => e.removeAttribute('data-agent-find'));
+            best.setAttribute('data-agent-find', '1');
+            const txt = label(best).slice(0, 90);
+            if (isControl(best)) return { kind: 'click', text: txt };
+            // Không phải nút → cuộn tới chuyên mục: anchor #id → phần tử id đó; ngược lại → tổ tiên có id.
             let target = best;
             if (best.tagName === 'A' && /^#.+/.test(best.getAttribute('href') || '')) {
               const t = document.querySelector(best.getAttribute('href'));
@@ -424,13 +451,23 @@ class BrowserTaskRunner {
               if (c) target = c;
             }
             target.scrollIntoView({ block: 'start' });
-            return {
-              text: norm(best.textContent).slice(0, 90),
-              id: target.id || '',
-              y0: Math.round(window.scrollY || 0),
-            };
+            return { kind: 'scroll', text: txt, id: target.id || '', y0: Math.round(window.scrollY || 0) };
           }, needle);
           if (!r) return { ok: false, error: 'Không thấy "' + needle + '" trên trang' };
+          if (r.kind === 'click') {
+            try { await page.click('[data-agent-find="1"]', { timeout: 5000 }); }
+            catch (e1) {
+              try { await page.locator('[data-agent-find="1"]').evaluate((el) => el.click()); }
+              catch (e2) {
+                const href = await page.locator('[data-agent-find="1"]').getAttribute('href').catch(() => null);
+                if (href) await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded', timeout: 20000 });
+              }
+            }
+            await page.evaluate(() => { const e = document.querySelector('[data-agent-find]'); if (e) e.removeAttribute('data-agent-find'); }).catch(() => {});
+            await this._afterNav();
+            return { ok: true, message: 'Đã bấm nút "' + r.text + '"' };
+          }
+          await page.evaluate(() => { const e = document.querySelector('[data-agent-find]'); if (e) e.removeAttribute('data-agent-find'); }).catch(() => {});
           await page.waitForTimeout(250).catch(() => {});
           const y1 = await page.evaluate(() => Math.round(window.scrollY || 0)).catch(() => r.y0);
           return { ok: true, message: 'Nhảy tới "' + r.text + '"' + (r.id ? ' (#' + r.id + ')' : '') + ' @Y=' + r.y0 + '→' + y1 };
