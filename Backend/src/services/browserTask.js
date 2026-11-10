@@ -397,23 +397,43 @@ class BrowserTaskRunner {
           if (!needle) return { ok: false, error: 'thiếu text để tìm' };
           const r = await page.evaluate((needle) => {
             const low = needle.toLowerCase();
-            const cands = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,a[href^="#"],li,dt,p'));
-            const hit = cands.find((el) => {
-              const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-              return t && t.length <= 140 && t.includes(low);
-            });
-            if (!hit) return null;
-            hit.scrollIntoView({ block: 'center' });
-            const idEl = hit.closest('[id]');
+            const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+            // Điểm ưu tiên: khớp NGẮN/GỌI-TÊN-CỤ-THỂ hơn là container chứa cả cây.
+            // heading > anchor > container; ngắn hơn > dài hơn; có id > không.
+            const score = (el) => {
+              const t = norm(el.textContent).toLowerCase();
+              if (!t || t.length > 160 || !t.includes(low)) return -1;
+              const tag = el.tagName.toLowerCase();
+              let s = 1000 - t.length;
+              if (/^h[1-6]$/.test(tag)) s += 600;
+              else if (tag === 'a') s += 300;
+              if (el.id) s += 120;
+              return s;
+            };
+            const cands = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,a[href^="#"],dt,li,p'));
+            let best = null, bestS = 0;
+            for (const el of cands) { const s = score(el); if (s > bestS) { bestS = s; best = el; } }
+            if (!best) return null;
+            // Node đích để nhảy: anchor #id → phần tử id đó; ngược lại → tổ tiên có id gần nhất.
+            let target = best;
+            if (best.tagName === 'A' && /^#.+/.test(best.getAttribute('href') || '')) {
+              const t = document.querySelector(best.getAttribute('href'));
+              if (t) target = t;
+            } else {
+              const c = best.closest('[id]');
+              if (c) target = c;
+            }
+            target.scrollIntoView({ block: 'start' });
             return {
-              text: (hit.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
-              id: (idEl && idEl.id) || hit.id || '',
-              y: Math.round(window.scrollY || 0),
+              text: norm(best.textContent).slice(0, 90),
+              id: target.id || '',
+              y0: Math.round(window.scrollY || 0),
             };
           }, needle);
           if (!r) return { ok: false, error: 'Không thấy "' + needle + '" trên trang' };
-          await page.waitForTimeout(150).catch(() => {});
-          return { ok: true, message: 'Nhảy tới "' + r.text + '"' + (r.id ? ' (#' + r.id + ')' : '') + ' @Y=' + r.y };
+          await page.waitForTimeout(250).catch(() => {});
+          const y1 = await page.evaluate(() => Math.round(window.scrollY || 0)).catch(() => r.y0);
+          return { ok: true, message: 'Nhảy tới "' + r.text + '"' + (r.id ? ' (#' + r.id + ')' : '') + ' @Y=' + r.y0 + '→' + y1 };
         }
         case 'read': {
           const txt = await s._viewportText(1500).catch(() => '');
