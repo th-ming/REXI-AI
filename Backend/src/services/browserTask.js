@@ -16,7 +16,7 @@ const ACTION_SCHEMA = {
     action: {
       type: 'object',
       properties: {
-        type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | vision' },
+        type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | read | vision' },
         selector: { type: 'string', description: 'CSS selector hoặc text=... (cho click/type)' },
         text: { type: 'string', description: 'text cần gõ, hoặc câu hỏi cho vision' },
         key: { type: 'string', description: 'phím (Enter, Space, ArrowDown...)' },
@@ -68,7 +68,7 @@ class BrowserTaskRunner {
     const text = String(goal || '').trim();
     if (!text) return { success: false, error: 'Thiếu mục tiêu (goal).' };
     if (this.isRunning()) return { success: false, error: 'Đang có tác vụ chạy — dừng tác vụ cũ trước.' };
-    if (!this.stream.page) await this.stream.launch();
+    if (!this.stream.page) await this.stream._ensurePage();
 
     this.stopped = false;
     this.task = {
@@ -101,6 +101,26 @@ class BrowserTaskRunner {
         const decision = await this._decide(task, obs);
         thought = decision.thought || '';
         action = decision.action || { type: 'wait', amount: 300 };
+
+        // CHỐNG LẶP: nếu hành động giống hệt bước trước → ép đọc nội dung (hoặc kết luận nếu đã đọc rồi)
+        const sig = action.type + '|' + (action.selector || action.url || action.text || action.key || action.direction || '');
+        if (task.lastSig && task.lastSig === sig) {
+          task.repeatCount = (task.repeatCount || 0) + 1;
+          if (task.repeatCount >= 2) {
+            if (task.readText) {
+              action = { type: 'wait', amount: 200 };
+              decision.done = true;
+              decision.summary = 'Đã lặp hành động — dừng. Đọc được: ' + task.readText.replace(/\s+/g, ' ').slice(0, 200);
+            } else {
+              action = { type: 'read' };
+              thought = (thought ? thought + ' ' : '') + '(ép đọc nội dung vì lặp hành động)';
+            }
+          }
+        } else {
+          task.repeatCount = 0;
+        }
+        task.lastSig = action.type + '|' + (action.selector || action.url || action.text || action.key || action.direction || '');
+
         const ex = await this._exec(action);
         ok = ex.ok !== false;
         message = ex.message || '';
@@ -140,10 +160,18 @@ class BrowserTaskRunner {
     const url = s.page ? s.page.url() : '';
     let title = '';
     try { title = await s.page.title(); } catch (e) { /* ignore */ }
+    let scrollY = 0, scrollHeight = 0;
+    try {
+      const pos = await s.page.evaluate(() => ({
+        y: Math.round(window.scrollY || (document.scrollingElement && document.scrollingElement.scrollTop) || 0),
+        h: Math.round(document.body ? document.body.scrollHeight : 0),
+      }));
+      scrollY = pos.y || 0; scrollHeight = pos.h || 0;
+    } catch (e) { /* ignore */ }
     const terms = (String(this.task.goal).toLowerCase().match(/[a-zà-ỹ0-9]+/gi) || []).filter((w) => w.length >= 2);
     const els = await s._interactiveMap(70, terms).catch(() => []);
     const vp = await s._viewportText(2200).catch(() => '');
-    return { url, title, els, vp };
+    return { url, title, els, vp, scrollY, scrollHeight };
   }
 
   // LLM quyết định hành động tiếp theo.
@@ -159,14 +187,19 @@ class BrowserTaskRunner {
       '- Phần tử canvas/không nhãn → {"type":"clickAt","x":..,"y":..}.\n' +
       '- Gõ vào ô → {"type":"type","selector":..,"text":..}; phím → {"type":"press","key":"Enter"}.\n' +
       '- Cuộn → {"type":"scroll","direction":"down","amount":600}.\n' +
+      '- Đọc nội dung đang hiển thị (text) → {"type":"read"} — dùng khi cần trích câu trả lời/tên mục.\n' +
       '- Cần đọc hình/canvas/game → {"type":"vision","text":"<câu hỏi cụ thể>"} (chỉ khi thật sự cần).\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
+      'CHỐNG LẶP: tuyệt đối không lặp lại đúng hành động của bước ngay trước. Nếu trang đã ở đúng trạng thái,\n' +
+      'hãy {"type":"read"} để lấy nội dung rồi kết luận done=true (kèm summary).\n' +
       'Đây là lần chạy TỰ ĐỘNG LIÊN TỤC: cứ trả về bước tiếp theo, đừng dừng lại để hỏi.';
 
     const user = 'MỤC TIÊU: ' + task.goal + '\n' +
       'URL: ' + obs.url + '\n' +
       'TIÊU ĐỀ: ' + obs.title + '\n' +
+      'VỊ TRÍ CUỘN: scrollY=' + obs.scrollY + '/' + obs.scrollHeight + '\n' +
       'LỊCH SỬ:\n' + (task.history.join('\n') || '(bước đầu)') + '\n\n' +
+      (task.readText ? 'NỘI DUNG ĐÃ ĐỌC (từ bước read):\n' + task.readText.slice(-900) + '\n\n' : '') +
       'PHẦN TỬ TƯƠNG TÁC:\n' + (elList || '(không thấy)') + '\n\n' +
       'NỘI DUNG ĐANG NHÌN THẤY:\n' + (obs.vp.slice(0, 1500) || '(trống)');
 
@@ -249,6 +282,12 @@ class BrowserTaskRunner {
         case 'wait': {
           await page.waitForTimeout(Math.min(10000, Math.max(50, Number(a.amount) || 500)));
           return { ok: true, message: 'Chờ' };
+        }
+        case 'read': {
+          const txt = await s._viewportText(1500).catch(() => '');
+          if (!txt) return { ok: false, error: 'Không đọc được text trên trang.' };
+          this.task.readText = (this.task.readText ? this.task.readText + '\n---\n' : '') + txt.slice(0, 1200);
+          return { ok: true, message: 'Đã đọc: ' + txt.replace(/\s+/g, ' ').slice(0, 220) };
         }
         case 'vision': {
           const v = await s.vision(a.text || 'Đọc nội dung màn hình hiện tại.', { maxTokens: 500 });

@@ -251,43 +251,54 @@ class BrowserStreamService {
   }
 
   // ĐỌC MÀN HÌNH bằng model vision (Groq multimodal) — cho canvas/game/đồ hoạ không có DOM text.
+  // ĐỌC MÀN HÌNH bằng model vision — cho canvas/game/đồ hoạ không có DOM text.
+  // Ưu tiên NVIDIA (nvidiaChat: pool model VL + xoay key) → fallback Groq multimodal.
   async vision(prompt, opts = {}) {
-    const apiKey = await this._getGroqKey();
-    if (!apiKey) return { success: false, error: 'Vision cần API key Groq (Admin Panel → Keys).' };
     const b64 = await this.getFrameB64();
     if (!b64) return { success: false, error: 'Chưa có frame nào để đọc.' };
+    const question = String(prompt || 'Mô tả chính xác nội dung đang hiển thị trên màn hình, kèm toạ độ các nút/điểm đáng chú ý.');
+    const messages = [{
+      role: 'user',
+      content: [
+        { type: 'text', text: question },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64 } },
+      ],
+    }];
 
+    // 1) NVIDIA — model VL trong pool, tự xoay key khi lỗi
+    try {
+      const nvidiaChat = require('./nvidiaChat');
+      const r = await nvidiaChat.handle({ model: opts.model || undefined, messages });
+      if (r && r.ok && r.content) {
+        this._visionModel = r.model;
+        return { success: true, model: r.model, provider: 'nvidia', text: r.content };
+      }
+      if (r && r.tried && r.tried.length) console.log('[BrowserStream] vision nvidia fail:', r.tried.slice(0, 3).join(' | '));
+    } catch (e) {
+      console.log('[BrowserStream] vision nvidia exception:', e.message);
+    }
+
+    // 2) Fallback: Groq multimodal
+    const apiKey = await this._getGroqKey();
+    if (!apiKey) return { success: false, error: 'Không có provider vision khả dụng (NVIDIA/Groq).' };
     const candidates = this._visionModel
       ? [this._visionModel]
       : ['meta-llama/llama-4-scout-17b-16e-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct', 'meta-llama/llama-3.2-11b-vision-preview'];
-    const question = String(prompt || 'Mô tả chính xác nội dung đang hiển thị trên màn hình, kèm toạ độ các nút/điểm đáng chú ý.');
-
     let lastErr = '';
     for (const model of candidates) {
       try {
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
-          body: JSON.stringify({
-            model,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'text', text: question },
-                { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
-              ],
-            }],
-            temperature: 0.2,
-            max_tokens: opts.maxTokens || 700,
-          }),
+          body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: opts.maxTokens || 700 }),
         });
-        if (!res.ok) { lastErr = `${model}: HTTP ${res.status}`; continue; }
+        if (!res.ok) { lastErr = model + ': HTTP ' + res.status; continue; }
         const data = await res.json();
-        const text = data.choices?.[0]?.message?.content || '';
-        if (!text) { lastErr = `${model}: rỗng`; continue; }
-        this._visionModel = model; // cache model hoạt động
-        return { success: true, model, text };
-      } catch (e) { lastErr = `${model}: ${e.message}`; }
+        const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+        if (!text) { lastErr = model + ': rỗng'; continue; }
+        this._visionModel = model;
+        return { success: true, model, provider: 'groq', text };
+      } catch (e) { lastErr = model + ': ' + e.message; }
     }
     return { success: false, error: 'Không đọc được màn hình: ' + lastErr };
   }
@@ -336,7 +347,25 @@ class BrowserStreamService {
 
   async launch(options = {}) {
     console.log('[BrowserStream] launch() called, browser exists:', !!this.browser, 'url:', options.url);
-    if (this.browser) return { success: true };
+    // Chống launch song song (SSE + action cùng lúc) → dùng chung 1 promise.
+    if (this._launchPromise) return this._launchPromise;
+    if (this.browser && this.page) return { success: true };
+    this._launchPromise = this._launch(options).finally(() => { this._launchPromise = null; });
+    return this._launchPromise;
+  }
+
+  // Chờ page sẵn sàng (browser có thể đã mở nhưng page chưa tạo xong) — tránh this.page undefined.
+  async _ensurePage(timeoutMs = 25000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      if (this.page && !this.page.isClosed()) return this.page;
+      if (!this.browser) { await this.launch(); continue; }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error('Trình duyệt chưa sẵn sàng (launch quá lâu)');
+  }
+
+  async _launch(options = {}) {
 
     try {
       console.log('[BrowserStream] Launching chromium (bundled, headless — KHÔNG mở cửa sổ Chrome thật)...');
@@ -681,7 +710,7 @@ class BrowserStreamService {
   }
 
   async act(instruction) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
 
     const trimmed = String(instruction || '').trim();
     const goto = async (url) => {
@@ -717,7 +746,7 @@ class BrowserStreamService {
     if (/(cuối trang|dưới cùng|xuống hết|bottom|kéo xuống cuối)/i.test(trimmed)) {
       try {
         await this.page.evaluate(() => { const el = document.scrollingElement || document.documentElement; el.scrollTop = el.scrollHeight; window.scrollTo(0, el.scrollHeight); });
-        await this.page.waitForTimeout(700);
+        await this.page.waitForTimeout(450);
         const t = await this.readText(4000);
         return { success: true, result: { message: `Đã cuộn xuống cuối trang (scrollY=${t.scrollY}/${t.scrollHeight}).`, url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText, scrollY: t.scrollY } };
       } catch (e) { /* ignore, xử lý chung bên dưới */ }
@@ -725,7 +754,7 @@ class BrowserStreamService {
     if (/(đầu trang|trên cùng|lên đầu|top|kéo lên đầu)/i.test(trimmed)) {
       try {
         await this.page.evaluate(() => { const el = document.scrollingElement || document.documentElement; el.scrollTop = 0; window.scrollTo(0, 0); });
-        await this.page.waitForTimeout(500);
+        await this.page.waitForTimeout(350);
         const t = await this.readText(4000);
         return { success: true, result: { message: `Đã cuộn lên đầu trang (scrollY=${t.scrollY}).`, url: t.url, title: t.title, text: t.viewportText, viewportText: t.viewportText, scrollY: t.scrollY } };
       } catch (e) { /* ignore */ }
@@ -744,19 +773,19 @@ class BrowserStreamService {
   }
 
   async click(x, y) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     await this.page.mouse.click(x, y);
     return { success: true };
   }
 
   async mouseMove(x, y, steps = 1) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     await this.page.mouse.move(Number(x) || 0, Number(y) || 0, { steps: Math.max(1, steps | 0) });
     return { success: true };
   }
 
   async mouseButton(action, x, y, button = 'left') {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     if (typeof x === 'number' && typeof y === 'number' && !Number.isNaN(x) && !Number.isNaN(y)) {
       await this.page.mouse.move(x, y);
     }
@@ -766,46 +795,67 @@ class BrowserStreamService {
   }
 
   async type(text) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     await this.page.keyboard.type(text);
     return { success: true };
   }
 
   async key(key) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     await this.page.keyboard.press(key);
     return { success: true };
   }
 
   async scroll(deltaX, deltaY) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     await this.page.mouse.wheel(Number(deltaX) || 0, Number(deltaY) || 0);
     return { success: true };
   }
 
-  // CUỘN LIÊN TỤC — nhịp nhanh (mặc định 25ms/lần) trong khoảng thời gian để tạo chuyển động mượt
+  // CUỘN LIÊN TỤC — nhịp rAF trong page (mượt thật, không phụ thuộc sự kiện wheel)
   // (TikTok/shorts: màn hình đổi liên tục → screencast sinh frame đều ~fps mục tiêu).
+  // Chạy NỀN, không chặn request: trả về ngay, client theo dõi qua stream.
   async scrollContinuous(opts = {}) {
-    if (!this.page) await this.launch();
+    await this._ensurePage();
     const deltaY = Number(opts.deltaY) || 260;
     const durationMs = Math.min(120000, Math.max(200, Number(opts.durationMs) || 8000));
     const intervalMs = Math.min(500, Math.max(16, Number(opts.intervalMs) || 25));
     const steps = Math.max(1, Math.ceil(durationMs / intervalMs));
-    let sent = 0;
-    const t0 = Date.now();
-    for (let i = 0; i < steps; i++) {
-      if (!this.page || this.page.isClosed()) break;
+    const perFrame = Math.max(0.5, (deltaY * 16) / intervalMs);
+    const mode = String(opts.mode || 'raf');
+    let lastErr = '';
+
+    const job = async () => {
       try {
-        await this.page.mouse.wheel(Number(opts.deltaX) || 0, deltaY);
-        sent++;
-      } catch (e) { break; }
-      const spent = Date.now() - t0;
-      if (spent >= durationMs) break;
-      await new Promise((r) => setTimeout(r, Math.max(0, intervalMs - (Date.now() - t0 - spent))));
-    }
-    let scrollY = 0;
-    try { scrollY = await this.page.evaluate(() => Math.round(window.scrollY)); } catch (e) { /* ignore */ }
-    return { success: true, sent, steps, durationMs, intervalMs, scrollY, message: `Cuộn liên tục: ${sent} lần cuộn trong ${durationMs}ms` };
+        await this.page.evaluate(async ({ py, dur }) => {
+          const start = performance.now();
+          await new Promise((resolve) => {
+            const tick = () => {
+              const elapsed = performance.now() - start;
+              window.scrollBy(0, py);
+              if (elapsed < dur) requestAnimationFrame(tick);
+              else resolve(true);
+            };
+            requestAnimationFrame(tick);
+          });
+        }, { py: perFrame, dur: durationMs });
+      } catch (e) {
+        lastErr = e.message;
+        // fallback: bánh xe chuột rời rạc
+        const t0 = Date.now();
+        while (Date.now() - t0 < durationMs && this.page && !this.page.isClosed()) {
+          try { await this.page.mouse.wheel(Number(opts.deltaX) || 0, deltaY); }
+          catch (e2) { lastErr = e2.message; break; }
+          await new Promise((r) => setTimeout(r, intervalMs));
+        }
+      }
+    };
+    this._scrollJob = job();
+
+    return {
+      success: true, mode, started: true, steps, durationMs, intervalMs, perFrame: Math.round(perFrame * 100) / 100,
+      message: 'Đã bắt đầu cuộn liên tục ' + durationMs + 'ms',
+    };
   }
 
   async close() {
