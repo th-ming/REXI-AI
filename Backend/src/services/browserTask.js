@@ -124,11 +124,13 @@ class BrowserTaskRunner {
         //    liên tục, KHÔNG cần hỏi LLM (nhanh hơn nhiều, không phụ thuộc model nào chọn đúng).
         let decision = null;
         let lastErr = null;
-        const over = this._detectGameOver(obs);
-        const auto = over ? null : this._detectArithmetic(obs);
+        const dbg = 'DBG els=[' + (obs.els || []).map((e) => e.tag + '~' + String(e.text || '').slice(0, 6)).join(' ') + '] vp=' + String(obs.vp || '').replace(/\s+/g, ' ').slice(0, 170);
+        const probe = await this._probeMath();
+        const auto = (probe && probe.eq && probe.hasInput) ? { ms: (probe.secs != null && probe.secs > 0) ? Math.min(120000, probe.secs * 1000 + 2500) : 122000, ref: '' } : null;
+        const over = (probe && !probe.hasInput && probe.score != null && (probe.over || probe.secs === 0)) ? { summary: 'Game kết thúc (hết giờ). Điểm cuối cùng: ' + probe.score + '.' } : null;
         if (over) {
           console.log('[BrowserTask] game kết thúc — chốt điểm: ' + over.summary);
-          decision = { thought: 'Game đã kết thúc (hết giờ) — chốt điểm cuối cùng.', done: true, summary: over.summary };
+          decision = { thought: 'GAME OVER — ' + over.summary + ' || ' + dbg, done: true, summary: over.summary };
         } else if (auto && (task.macroRuns || 0) < 8) {
           console.log('[BrowserTask] macro TỰ ĐỘNG (phát hiện game toán) ms=' + auto.ms + ' ref=' + (auto.ref || '-'));
           decision = {
@@ -614,6 +616,23 @@ class BrowserTaskRunner {
 
   // Nhận diện GAME ĐÃ KẾT THÚC: có "Score: N" + dấu hiệu hết game (hết giờ / Try again / change settings)
   // và KHÔNG còn ô nhập → chốt luôn điểm cuối, khỏi tốn bước LLM đọc lại.
+  // PROBE trực tiếp DOM: dùng innerText (tôn trọng visibility) + kiểm tra ô nhập THẬT trên trang.
+  // Tin cậy hơn _interactiveMap (vốn bỏ sót ô nhập nhỏ của Zetamac) để phân biệt đang-chơi vs hết-game.
+  async _probeMath() {
+    const page = this.stream && this.stream.page;
+    if (!page) return null;
+    return page.evaluate(() => {
+      const norm = (document.body ? document.body.innerText : '')
+        .replace(/[\u2212\u2013\u2014]/g, '-').replace(/[\u00d7\u2715\u2a2f]/g, '*').replace(/\u00f7/g, '/');
+      const eqm = norm.match(/-?\d+\s*[+\-*/]\s*-?\d+/);
+      const sm = norm.match(/score:\s*(\d+)/i);
+      const lm = norm.match(/seconds\s*left:\s*(-?\d+)/i);
+      const inp = document.querySelector('input[type=text], input[type=number], input:not([type])');
+      const hasInput = !!inp && inp.offsetParent !== null && !inp.disabled;
+      return { eq: eqm ? eqm[0] : '', hasInput, score: sm ? Number(sm[1]) : null, secs: lm ? Number(lm[1]) : null, over: /try again/i.test(norm) };
+    }).catch(() => null);
+  }
+
   _detectGameOver(obs) {
     const vp = String((obs && obs.vp) || '');
     const ms = vp.match(/score:\s*(\d+)/i);
@@ -678,7 +697,7 @@ class BrowserTaskRunner {
     let solved = 0, fails = 0, lastEq = '';
     while (Date.now() < deadline && !this.stopped) {
       const secs = await secondsLeft();
-      if (secs != null && secs <= 0) break; // hết giờ → dừng
+      // KHÔNG dừng theo secs (trạng thái game vừa load hiển thị "Seconds left: 0"); dựa vào deadline + mất ô nhập. // hết giờ → dừng
       const eq = await readEq();
       const mm = eq && eq.match(/^(-?\d+)([+\-*/])(-?\d+)$/);
       if (!mm) {
