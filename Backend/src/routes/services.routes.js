@@ -2160,7 +2160,7 @@ async function transcribeWithGemini(genAI, audioPath) {
 }
 
 // Tóm tắt bằng Groq (thử nhiều model — model có thể bị Groq gỡ bất cứ lúc nào)
-const GROQ_SUMMARY_MODELS = ['llama-3.1-8b-instant', 'openai/gpt-oss-20b', 'qwen/qwen3-32b'];
+const GROQ_SUMMARY_MODELS = ['qwen/qwen3.8-27b', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'];
 async function summarizeWithGroq(groq, text) {
   if (!groq) return '';
   for (const m of GROQ_SUMMARY_MODELS) {
@@ -2902,8 +2902,8 @@ const browserTask = require('../services/browserTask');
 // Chạy tác vụ dài (nhiều bước) — agent tự observe → quyết định → hành động, liên tục
 router.post('/browser/task', authMiddleware, async (req, res) => {
   try {
-    const { goal, maxSteps, intervalMs } = req.body || {};
-    const result = await browserTask.start(goal, { maxSteps, intervalMs });
+    const { goal, maxSteps, intervalMs, model } = req.body || {};
+    const result = await browserTask.start(goal, { maxSteps, intervalMs, model });
     res.json(result);
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -3698,7 +3698,7 @@ async function storyboardScenes(prompt, n) {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: process.env.GROQ_STORY_MODEL || 'llama-3.1-8b-instant',
+        model: process.env.GROQ_STORY_MODEL || 'qwen/qwen3.8-27b',
         messages: [
           { role: 'system', content: `You split a story into exactly ${n} consecutive video scene prompts. Reply ONLY a JSON array of ${n} strings. Each string: one vivid English visual scene description (max 40 words), same characters and setting across all scenes, chronological story flow. No numbering, no extra text.` },
           { role: 'user', content: story }

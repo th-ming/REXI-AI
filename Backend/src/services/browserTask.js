@@ -16,7 +16,7 @@ const ACTION_SCHEMA = {
     action: {
       type: 'object',
       properties: {
-        type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | read | vision | find' },
+        type: { type: 'string', description: 'click | clickAt | type | press | scroll | goto | wait | read | vision | find | macro' },
         selector: { type: 'string', description: 'CSS selector hoặc text=... (cho click/type)' },
         text: { type: 'string', description: 'text cần gõ, hoặc câu hỏi cho vision' },
         key: { type: 'string', description: 'phím (Enter, Space, ArrowDown...)' },
@@ -31,6 +31,27 @@ const ACTION_SCHEMA = {
     },
   },
   required: ['thought', 'action'],
+};
+
+// ── CHUỖI MODEL QUYẾT ĐỊNH — ưu tiên NHANH + trả JSON ổn ─────────────────────
+// Thử LẦN LƯỢT tới khi có hành động hợp lệ: Groq (qwen3.8-27b cực nhanh ~270ms) →
+// Cerebras (inference nhanh nhất) → Kilo keyless (nemotron lightning:free) →
+// NVIDIA NIM (nemotron lightning) → chuỗi callAI cũ (xkiro/agent env).
+// Key: groq qua DB/env, cerebras qua DB/env, kilo KEYLESS, nvidia qua NVIDIA_KEYS env.
+const FAST_MODELS = [
+  { provider: 'groq',   model: 'qwen/qwen3.8-27b' },   // nhanh nhất ~0.5s, JSON chuẩn
+  { provider: 'groq',   model: 'openai/gpt-oss-20b' },  // ~1.0s
+  { provider: 'kilo',   model: 'kilo-auto/small' },     // keyless, ~2.2s
+  { provider: 'nvidia', model: 'google/gemma-4-31b-it' }, // NVIDIA NIM, ~2.0s
+  { provider: 'groq',   model: 'openai/gpt-oss-120b' }, // mạnh/chính xác, dự phòng cuối
+  { provider: 'kilo',   model: 'kilo-auto/free' },      // keyless, dự phòng cuối
+];
+
+const CHAT_URL = {
+  groq:     'https://api.groq.com/openai/v1/chat/completions',
+  cerebras: 'https://api.cerebras.ai/v1/chat/completions',
+  kilo:     'https://kilo.ai/api/openrouter/chat/completions',
+  nvidia:   'https://integrate.api.nvidia.com/v1/chat/completions',
 };
 
 class BrowserTaskRunner {
@@ -79,6 +100,7 @@ class BrowserTaskRunner {
       startedAt: Date.now(),
       maxSteps: Math.min(200, Math.max(1, Number(opts.maxSteps) || 60)),
       intervalMs: Math.min(3000, Math.max(0, Number(opts.intervalMs) || 250)),
+      model: String(opts.model || '').trim() || null,
       history: [],
     };
 
@@ -246,6 +268,9 @@ class BrowserTaskRunner {
       '- TÌM & BẤM một mục/đoạn/NÚT có tên trên trang (kể cả mục lục bị thu gọn, hoặc một nút bấm) → {"type":"find","text":"<đúng chữ hiển thị trên nút/mục>"}. ' +
       'find TỰ BẤM nếu khớp là nút/submit, hoặc nhảy tới nếu là chuyên mục; ĐỪNG cuộn mù tìm chữ và ĐỪNG giả vờ không thấy nút.\n' +
       '- Cần đọc hình/canvas/game → {"type":"vision","text":"<câu hỏi cụ thể>"} (chỉ khi thật sự cần).\n' +
+      '- Chuỗi thao tác cơ học LẶP (vd GIẢI SỐ HỌC liên tục: thấy phép tính + ô nhập, cần trả lời nhanh nhiều câu) → ' +
+      '{"type":"macro","text":"arithmetic","amount":25000} — tự đọc biểu thức, TÍNH rồi gõ đáp án liên tục trong ~amount ms. ' +
+      'DÙNG khi thấy phép tính số học + ô nhập (game/quiz toán) để khỏi tốn 1 bước cho mỗi câu.\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
       'CÁCH TÌM CHUYÊN MỤC: xem "BẢN ĐỒ TRANG" (danh sách mục/anchor). Nếu mục tiêu nhắc tới một mục ' +
       'có trong bản đồ → dùng {"type":"find"} hoặc click thẳng anchor href tương ứng. CHỈ cuộn khi thực sự cần.\n' +
@@ -273,40 +298,91 @@ class BrowserTaskRunner {
       '\n\nCHỈ trả về MỘT đối tượng JSON đúng schema sau, không thêm chữ khác:\n' +
       JSON.stringify({ thought: '<câu>', done: false, summary: '<khi done>', action: { type: 'click|clickAt|type|press|scroll|goto|wait|read|vision|find', selector: '', text: '', key: '', direction: '', url: '', x: 0, y: 0, amount: 0 } });
 
-    // 1) Groq với JSON schema (nhanh, chuẩn JSON)
-    try {
-      const apiKey = await this.stream._getGroqKey();
-      if (apiKey) {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
-          body: JSON.stringify({
-            model: 'openai/gpt-oss-120b',
-            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-            response_format: { type: 'json_schema', json_schema: { name: 'browser_step', schema: ACTION_SCHEMA } },
-            temperature: 0.2,
-          }),
-          signal: AbortSignal.timeout(45000),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const content = data.choices?.[0]?.message?.content || '';
-          const obj = this._parseJson(content);
-          if (obj && obj.action && obj.action.type) return obj;
-          throw new Error('Groq trả về JSON không hợp lệ');
+    // 1) CHUỖI MODEL NHANH (nhiều provider) — thử LẦN LƯỢT, ưu tiên độ trễ thấp + JSON ổn.
+    //    Model ghim tay (task.model, vd khi tạo tác vụ) được thử trước, chạy trên Groq.
+    const chain = (task.model ? [{ provider: 'groq', model: task.model }] : []).concat(FAST_MODELS);
+    for (const c of chain) {
+      try {
+        const content = await this._chatOnce(c, system, user);
+        if (!content) continue;
+        const obj = this._parseJson(content);
+        if (obj && obj.action && obj.action.type) {
+          obj._model = (c.provider ? c.provider + ':' : '') + c.model;
+          return obj;
         }
-        throw new Error('Groq HTTP ' + res.status);
+      } catch (e) {
+        console.warn('[BrowserTask] ' + (c.provider || '?') + '/' + c.model + ' fail:', e.message);
       }
-    } catch (e) {
-      console.warn('[BrowserTask] Groq fail, chuyển provider khác:', e.message);
     }
 
-    // 2) Chuỗi provider dự phòng (xkiro → groq → unorouter → kiosapi) qua agentService.callAI
+    // 2) Chuỗi provider dự phòng cũ (xkiro/agent env → ...) qua agentService.callAI
     const { callAI } = require('./agentService');
     const txt = await callAI(fullPrompt);
     const obj = this._parseJson(txt);
     if (!obj || !obj.action || !obj.action.type) throw new Error('LLM không trả về hành động hợp lệ');
     return obj;
+  }
+
+  // Gọi 1 lượt chat OpenAI-compatible cho 1 mục {provider, model} trong chuỗi quyết định.
+  // Groq/Cerebras/Kilo: fetch trực tiếp (kilo KEYLESS). NVIDIA: dùng pool + xoay key sẵn có.
+  async _chatOnce(c, system, user) {
+    const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+    // NVIDIA NIM: xoay khoá từ NVIDIA_KEYS (nhiều key, ngăn bằng dấu phẩy) — pool model ở nvidiaChat
+    // không có gemma nên gọi thẳng endpoint, tự luân key khi 429/5xx.
+    if (c.provider === 'nvidia') {
+      const keys = (process.env.NVIDIA_KEYS || '').split(',').map((s) => s.trim()).filter(Boolean);
+      if (!keys.length) throw new Error('NVIDIA_KEYS chưa cấu hình');
+      let lastErr = null;
+      for (const k of keys) {
+        try {
+          const res = await fetch(CHAT_URL.nvidia, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + k },
+            body: JSON.stringify({ model: c.model, messages, temperature: 0.2, max_tokens: 700, response_format: { type: 'json_object' } }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!res.ok) { lastErr = new Error('HTTP ' + res.status); continue; }
+          const j = await res.json();
+          const content = j.choices?.[0]?.message?.content || '';
+          if (content) return content;
+          lastErr = new Error('empty response');
+        } catch (e) { lastErr = e; }
+      }
+      throw lastErr || new Error('nvidia fail');
+    }
+    const url = CHAT_URL[c.provider];
+    if (!url) throw new Error('provider lạ: ' + c.provider);
+    // Kilo KEYLESS → KHÔNG gửi Authorization (Bearer rỗng/sai → 401).
+    const key = c.provider === 'kilo' ? '' : await this._getKey(c.provider);
+    if (c.provider !== 'kilo' && !key) throw new Error('thiếu key ' + c.provider);
+    const base = { model: c.model, messages, temperature: 0.2, max_tokens: 700 };
+    const doFetch = async (jsonMode) => {
+      const headers = { 'Content-Type': 'application/json' };
+      if (key) headers.Authorization = 'Bearer ' + key;
+      const payload = jsonMode ? Object.assign({}, base, { response_format: { type: 'json_object' } }) : base;
+      return fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
+    };
+    let res = await doFetch(true);
+    if (!res.ok && res.status === 400) res = await doFetch(false); // model không hỗ trợ json_object → thử plain
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    return j.choices?.[0]?.message?.content || '';
+  }
+
+  // Lấy API key provider: ưu tiên CSDL khoa_api (mã hoá), rồi tới env <PROVIDER>_API_KEY.
+  async _getKey(provider) {
+    try {
+      const db = require('../config/db');
+      const { decryptKey } = require('../utils/cryptoKeys');
+      const row = await new Promise((resolve) => {
+        db.get("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = LOWER(?) AND gia_tri_khoa IS NOT NULL AND TRIM(gia_tri_khoa) <> '' LIMIT 1",
+          [provider], (e, r) => resolve(e ? null : r));
+      });
+      if (row && row.gia_tri_khoa) {
+        try { const k = decryptKey(row.gia_tri_khoa).trim(); if (k) return k; }
+        catch (e) { const k = String(row.gia_tri_khoa).trim(); if (k) return k; }
+      }
+    } catch (e) { /* rơi xuống env */ }
+    return process.env[provider.toUpperCase() + '_API_KEY'] || '';
   }
 
   // Rút gọn bản đồ trang thành text cho prompt (giới hạn độ dài).
@@ -502,12 +578,57 @@ class BrowserTaskRunner {
           this.task.history.push('VISION: ' + v.text.slice(0, 400));
           return { ok: true, message: 'Vision: ' + v.text.slice(0, 300) };
         }
+        case 'macro': {
+          const name = String(a.name || a.text || '').toLowerCase();
+          if (/arith|math|toán|toan|tính|tinh|solve|số học|so hoc/.test(name)) {
+            return await this._macroArithmetic(Number(a.amount) || 25000);
+          }
+          return { ok: false, error: 'macro không rõ: ' + (a.name || a.text || '') };
+        }
         default:
           return { ok: false, error: 'Hành động không rõ: ' + a.type };
       }
     } catch (e) {
       return { ok: false, error: e.message };
     }
+  }
+
+  // MACRO: tự đọc biểu thức số học đang hiển thị, tính và gõ đáp án LIÊN TỤC trong `ms` (game/quiz toán).
+  // Không gọi LLM mỗi câu → nhanh gấp nhiều lần so với vòng observe→decide→exec từng bước.
+  async _macroArithmetic(ms) {
+    const page = this.stream.page;
+    const budget = Math.min(120000, Math.max(3000, ms || 25000));
+    const t0 = Date.now();
+    const deadline = t0 + budget;
+    let solved = 0, fails = 0, lastEq = '';
+    while (Date.now() < deadline && !this.stopped) {
+      // Biểu thức số học gần nhất trên trang (chuẩn hoá − – — × ÷ về ASCII).
+      const eq = await page.evaluate(() => {
+        const t = (document.body.innerText || '')
+          .replace(/[\u2212\u2013\u2014]/g, '-').replace(/[\u00d7\u2715\u2a2f]/g, '*').replace(/\u00f7/g, '/');
+        const m = t.match(/-?\d+\s*[+\-*/]\s*-?\d+/g);
+        return m ? m[m.length - 1].replace(/\s+/g, '') : '';
+      }).catch(() => '');
+      const mm = eq && eq.match(/^(-?\d+)([+\-*/])(-?\d+)$/);
+      if (!mm) { await page.waitForTimeout(150).catch(() => {}); continue; }
+      const x = Number(mm[1]), y = Number(mm[3]), op = mm[2];
+      let ans;
+      if (op === '+') ans = x + y;
+      else if (op === '-') ans = x - y;
+      else if (op === '*') ans = x * y;
+      else ans = y === 0 ? NaN : Math.round(x / y);
+      if (!Number.isFinite(ans)) { await page.waitForTimeout(120).catch(() => {}); continue; }
+      try {
+        const inp = page.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]), textarea').first();
+        await inp.fill(String(ans), { timeout: 1500 });
+        await page.keyboard.press('Enter');
+        if (eq === lastEq) fails++; else { solved++; fails = 0; }
+        lastEq = eq;
+      } catch (e) { fails++; }
+      if (fails >= 8) break; // ô nhập biến mất (hết giờ/chuyển trang)
+      await page.waitForTimeout(15).catch(() => {});
+    }
+    return { ok: true, message: 'Macro giải toán: ' + solved + ' câu / ' + Math.round((Date.now() - t0) / 1000) + 's' };
   }
 
   // Chờ trang vừa điều hướng ổn định (timeout thấp để không bị treo).
