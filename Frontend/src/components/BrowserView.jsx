@@ -4,11 +4,24 @@ import { tx } from '../i18n-sweep';
 import React, { useEffect, useRef, useState } from 'react';
 import { Maximize2, X, RefreshCw, Search, Loader2, Zap, Bot } from 'lucide-react';
 
+// Đuôi header multipart: "Content-Type: image/jpeg\r\n\r\n"
+const HEAD_END = new TextEncoder().encode('\r\n\r\n');
+
+// Tìm chuỗi byte needle trong Uint8Array, từ vị trí `from`.
+function findBytes(hay, needle, from = 0) {
+  outer: for (let i = from; i <= hay.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
 
 export default function BrowserView({ onClose }) {
   const lang = getLang();
   const canvasRef = useRef(null);
   const wsRef = useRef(null);
+  const framesAbortRef = useRef(null);
   const intentionalCloseRef = useRef(false);
   const reconnectAttemptsRef = useRef(0);
   const [connected, setConnected] = useState(false);
@@ -41,6 +54,60 @@ export default function BrowserView({ onClose }) {
     return () => clearInterval(interval);
   }, []);
 
+  // Kênh frame BINARY (multipart/x-mixed-replace) — nhanh hơn SSE base64 ~4×.
+  // Đọc chunk, tách theo boundary, decode JPEG → draw vào canvas.
+  const connectFrames = () => {
+    const token = localStorage.getItem('rexi_token') || '';
+    if (framesAbortRef.current) { try { framesAbortRef.current.abort(); } catch (e) {} }
+    const ac = new AbortController();
+    framesAbortRef.current = ac;
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/services/browser/stream-frames?token=${encodeURIComponent(token)}`, {
+          signal: ac.signal, headers: { Accept: 'multipart/x-mixed-replace' },
+        });
+        if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+        const reader = resp.body.getReader();
+        let buf = new Uint8Array(0);
+        const MARK = new TextEncoder().encode('--frame');
+        const SOI = new Uint8Array([0xff, 0xd8]); // JPEG start-of-image
+        const EOI = new Uint8Array([0xff, 0xd9]); // JPEG end-of-image
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!value || !value.length) continue;
+          const merged = new Uint8Array(buf.length + value.length);
+          merged.set(buf, 0); merged.set(value, buf.length);
+          buf = merged;
+          for (;;) {
+            // Tìm JPEG trong chunk: SOI ... EOI (đáng tin cậy hơn đoán độ dài).
+            const s = findBytes(buf, SOI);
+            if (s < 0) break;
+            const e = findBytes(buf, EOI, s + 2);
+            if (e < 0) break; // chưa đủ frame — chờ chunk sau
+            const jpeg = buf.slice(s, e + 2);
+            // Cắt phần đã xử lý (nhưng giữ lại boundary "--frame" nếu có ngay trước)
+            const nextMark = findBytes(buf, MARK, e + 2);
+            buf = nextMark >= 0 ? buf.slice(nextMark) : buf.slice(e + 2);
+            if (jpeg.length > 100) {
+              const blob = new Blob([jpeg], { type: 'image/jpeg' });
+              const bmp = await createImageBitmap(blob);
+              const cv = canvasRef.current;
+              if (cv) {
+                if (cv.width !== bmp.width || cv.height !== bmp.height) { cv.width = bmp.width; cv.height = bmp.height; }
+                cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+                bmp.close?.();
+                frameCountRef.current++;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        if (e.name !== 'AbortError') console.warn('[frames] stream ended:', e.message);
+      }
+    })();
+  };
+
   const connectWS = () => {
     // 4/10: ĐỔI WS → SSE — Render proxy chèn WS compression (RSV1/fragmentation) làm
     // connection chết 1006 ngầm (server clients 0, không frame). SSE là HTTP thường,
@@ -56,27 +123,14 @@ export default function BrowserView({ onClose }) {
       reconnectAttemptsRef.current = 0;
       setConnected(true);
       setStatus('connected');
+      // Kênh frame binary có thể đã chết (mất mạng) → mở lại.
+      if (!framesAbortRef.current) connectFrames();
     };
 
     es.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === 'frame' && msg.data && canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
-          const img = new Image();
-          img.onload = () => {
-            const cv = canvasRef.current;
-            if (!cv) return;
-            // Canvas bitmap = kích thước ảnh thật (Chromium giữ tỉ lệ khi scale).
-            // Bảo đảm khung hình không méo + ánh xạ click chính xác.
-            if (cv.width !== img.naturalWidth || cv.height !== img.naturalHeight) {
-              cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-            }
-            ctx.drawImage(img, 0, 0, cv.width, cv.height);
-            frameCountRef.current++;
-          };
-          img.src = msg.data;
-        }
+        // Frame ảnh đi qua kênh BINARY (stream-frames) — SSE chỉ mang event.
         if (msg.type === 'hello' && msg.opts) {
           // Server có thể đổi kích thước stream → cập nhật nhãn cho đúng.
           setStreamRes({ w: Number(msg.opts.maxWidth) || 1280, h: Number(msg.opts.maxHeight) || 720 });
@@ -136,6 +190,10 @@ export default function BrowserView({ onClose }) {
       try { wsRef.current.close(); } catch (e) { console.warn('[rexi] ws close failed', e); }
       wsRef.current = null;
     }
+    if (framesAbortRef.current) {
+      try { framesAbortRef.current.abort(); } catch (e) {}
+      framesAbortRef.current = null;
+    }
     setConnected(false);
     setStatus('disconnected');
   };
@@ -149,6 +207,7 @@ export default function BrowserView({ onClose }) {
         body: JSON.stringify({ url: initialUrl }),
       });
       connectWS();
+      connectFrames();
       setStatus('connected');
     } catch (e) {
       setStatus('error');

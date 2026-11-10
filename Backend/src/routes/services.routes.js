@@ -3029,6 +3029,46 @@ router.get('/browser/status', authMiddleware, (req, res) => {
   res.json(browserStream.getStatus());
 });
 
+// GET: stream frame JPEG THÔ (binary) — multipart/x-mixed-replace (kiểu MJPEG).
+// Nhanh hơn SSE base64 rất nhiều: không base64 (+33%), không JSON stringify ~40KB/frame.
+// FE dùng endpoint này để vẽ; SSE chỉ để nhận event (step/task).
+router.get('/browser/stream-frames', async (req, res) => {
+  const token = req.query.token || '';
+  let user = null;
+  try {
+    const jwt = require('jsonwebtoken');
+    const { getJWTSecret } = require('../middleware/auth.middleware');
+    user = jwt.verify(token, getJWTSecret());
+  } catch (e) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: invalid token' });
+  }
+  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  res.writeHead(200, {
+    'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+    'Cache-Control': 'no-cache, no-store, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
+
+  if (!browserStream.page && !browserStream.browser) {
+    browserStream.launch().catch(e => console.error('[Frames] Auto-launch error:', e.message));
+  }
+  await browserStream.startScreencast();
+
+  // Đăng ký vào kênh binary: _sendFrame() tự đẩy từng frame mới (không poll).
+  browserStream._frameSubs.add(res);
+
+  const ka = setInterval(() => { try { if (!res.writableEnded && !res.destroyed) res.write('\r\n'); } catch (e) {} }, 15000);
+  const cleanup = () => {
+    clearInterval(ka);
+    browserStream._frameSubs.delete(res);
+  };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+});
+
 // GET: SSE stream frames — thay WebSocket (Render proxy chèn WS compression RSV1/
 // fragmentation → connection chết 1006 ngầm, self-test xác nhận). HTTP thường qua
 // Render + Cloudflare OK. Auth ?token= (EventSource không gửi được header).

@@ -41,6 +41,12 @@ class BrowserStreamService {
     this._lastFrameAt = 0;          // mốc thời gian frame cuối (để keepalive)
     this._keepAliveTimer = null;
     this._encodeCount = 0;          // số frame browser đã encode (đo tải CPU)
+    // Bộ đếm chẩn đoán: cdp (frame Chromium đẩy) → sent (frame server gửi client)
+    // → để tách bottleneck: raster vs throttle vs transport.
+    this._stat = { cdp: 0, sent: 0, throttled: 0, bytes: 0 };
+    this._frameSubs = new Set();    // subscriber nhận frame BINARY (không base64)
+    this._lastFrameBuf = null;      // frame JPEG thô gần nhất
+    this._frameBoundary = Buffer.from('\r\n--frame\r\nContent-Type: image/jpeg\r\n\r\n');
   }
 
   setWSS(wss) {
@@ -142,9 +148,10 @@ class BrowserStreamService {
           // Phải ACK mỗi frame, nếu không Chromium ngừng gửi frame tiếp.
           try { await this.cdpSession.send('Page.screencastFrameAck', { sessionId: params.sessionId }); } catch (e) {}
           this._encodeCount++;
+          this._stat.cdp++;
           const now = Date.now();
           const minGap = 1000 / (this.streamOpts.fps || 15);
-          if (now - this._lastFrameTs < minGap) { this._droppedFrames++; return; } // throttle tới fps mục tiêu
+          if (now - this._lastFrameTs < minGap) { this._droppedFrames++; this._stat.throttled++; return; } // throttle tới fps mục tiêu
           this._lastFrameTs = now;
           this._lastFrameAt = now;
           this._sendFrame(params.data);
@@ -288,6 +295,18 @@ class BrowserStreamService {
   // Phát 1 frame tới mọi kênh; bỏ frame cho client chậm (backpressure) để không dồn RAM.
   _sendFrame(b64, mime = 'image/jpeg') {
     this._lastFrameB64 = b64;
+    // Kênh NHỊ PHÂN: gửi JPEG thô (binary), KHÔNG base64 + KHÔNG JSON.
+    // SSE base64 tăng payload 33% + tốn CPU stringify ~40KB/frame → trần ~7fps trên 0.5 vCPU.
+    const buf = Buffer.from(b64, 'base64');
+    this._lastFrameBuf = buf;
+    this._frameSubs.forEach((res) => {
+      try {
+        if (res.writableEnded || res.destroyed) { this._frameSubs.delete(res); return; }
+        if (res.writableLength > 3 * 1024 * 1024) { this._droppedFrames++; return; }
+        res.write(Buffer.concat([this._frameBoundary, buf]));
+      } catch (e) { this._frameSubs.delete(res); }
+    });
+    // Kênh SSE (JSON) — dùng cho event + client cũ.
     const message = JSON.stringify({ type: 'frame', data: `data:${mime};base64,${b64}`, ts: Date.now() });
     this.clients.forEach((c) => { try { if (c.readyState === WebSocket.OPEN) c.send(message); } catch (e) {} });
     this.subscribers.forEach((res) => {
@@ -297,6 +316,8 @@ class BrowserStreamService {
         res.write(`data: ${message}\n\n`);
       } catch (e) { this.subscribers.delete(res); }
     });
+    this._stat.sent++;
+    this._stat.bytes += buf.length;
   }
 
   // Gửi event phi-frame (step, task status...) tới client — cùng kênh SSE.
@@ -1107,6 +1128,7 @@ class BrowserStreamService {
         droppedFrames: this._droppedFrames,
         encodedFrames: this._encodeCount,
         lastFrameAt: this._lastFrameAt || null,
+        stat: { ...this._stat },
       },
       scroll: this._scrollStats || null,
     };
