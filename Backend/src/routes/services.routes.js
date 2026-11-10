@@ -2897,6 +2897,45 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
 
 // ========== BROWSER STREAM ROUTES ==========
 const browserStream = require('../services/browserStream');
+const browserTask = require('../services/browserTask');
+
+// Chạy tác vụ dài (nhiều bước) — agent tự observe → quyết định → hành động, liên tục
+router.post('/browser/task', authMiddleware, async (req, res) => {
+  try {
+    const { goal, maxSteps, intervalMs } = req.body || {};
+    const result = await browserTask.start(goal, { maxSteps, intervalMs });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.post('/browser/task/stop', authMiddleware, async (req, res) => {
+  try {
+    res.json(browserTask.stop((req.body || {}).reason || 'Người dùng dừng'));
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.get('/browser/task', authMiddleware, async (req, res) => {
+  try {
+    res.json(browserTask.status());
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Đọc màn hình bằng model vision (canvas/game/đồ hoạ không có DOM text)
+router.post('/browser/vision', authMiddleware, async (req, res) => {
+  try {
+    const { prompt } = req.body || {};
+    const result = await browserStream.vision(prompt);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 router.post('/browser/launch', authMiddleware, async (req, res) => {
   try {
@@ -3061,6 +3100,15 @@ router.post('/browser/act', authMiddleware, async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+// Cuộn liên tục (mượt) — dùng cho TikTok/shorts: nhịp cuộn ổn định trong N ms
+router.post('/browser/scroll-continuous', authMiddleware, async (req, res) => {
+  try {
+    const { deltaX, deltaY, durationMs, intervalMs } = req.body || {};
+    const result = await browserStream.scrollContinuous({ deltaX, deltaY, durationMs, intervalMs });
+    res.json(result);
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // POST: chỉnh thông số stream (chất lượng/fps/kích thước) — "mượt hơn" hoặc "nhẹ hơn"

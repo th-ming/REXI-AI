@@ -20,6 +20,12 @@ export default function BrowserView({ onClose }) {
   const frameCountRef = useRef(0);
   const lastFrameTimeRef = useRef(Date.now());
   const [fps, setFps] = useState(0);
+  const [steps, setSteps] = useState([]);
+  const [taskGoal, setTaskGoal] = useState('');
+  const [taskRunning, setTaskRunning] = useState(false);
+  const [taskInfo, setTaskInfo] = useState(null);
+  const [visionLoading, setVisionLoading] = useState(false);
+  const stepsEndRef = useRef(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -64,6 +70,28 @@ export default function BrowserView({ onClose }) {
         if (msg.type === 'auth_failed') {
           setStatus('error');
           console.error('[SSE] auth_failed:', msg.msg);
+        }
+        // ---- Task runner: theo dõi từng bước ----
+        if (msg.type === 'task_start') {
+          setSteps([]);
+          setTaskRunning(true);
+          setTaskInfo({ goal: msg.goal, status: 'running', steps: 0 });
+        }
+        if (msg.type === 'step') {
+          setSteps((prev) => [...prev.slice(-199), {
+            n: msg.n, thought: msg.thought, action: msg.action,
+            ok: msg.ok !== false, message: msg.message, error: msg.error, ts: msg.ts,
+          }]);
+          setTaskInfo((prev) => (prev ? { ...prev, steps: (prev.steps || 0) + 1 } : prev));
+          setTimeout(() => stepsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+        }
+        if (msg.type === 'task_done') {
+          setTaskRunning(false);
+          setTaskInfo((prev) => ({ ...(prev || {}), status: 'done', ok: msg.ok, summary: msg.summary, steps: msg.steps }));
+        }
+        if (msg.type === 'task_stopped' || msg.type === 'task_error') {
+          setTaskRunning(false);
+          setTaskInfo((prev) => ({ ...(prev || {}), status: msg.type === 'task_error' ? 'error' : 'stopped', error: msg.error || msg.reason }));
         }
       } catch {
       }
@@ -203,6 +231,68 @@ export default function BrowserView({ onClose }) {
     }
   };
 
+  // ---- Tác vụ tự động nhiều bước (task runner) ----
+  const startTask = async () => {
+    if (!taskGoal.trim()) return;
+    setTaskRunning(true);
+    setSteps([]);
+    setTaskInfo({ goal: taskGoal, status: 'running', steps: 0 });
+    try {
+      const r = await apiFetch('/services/browser/task', {
+        method: 'POST',
+        body: JSON.stringify({ goal: taskGoal }),
+      });
+      if (r && r.success === false) {
+        setTaskRunning(false);
+        setTaskInfo({ goal: taskGoal, status: 'error', error: r.error });
+      }
+    } catch (e) {
+      setTaskRunning(false);
+      setTaskInfo({ goal: taskGoal, status: 'error', error: e.message });
+    }
+  };
+
+  const stopTask = async () => {
+    try {
+      await apiFetch('/services/browser/task/stop', { method: 'POST', body: JSON.stringify({}) });
+    } catch (e) {
+      console.error('stop task:', e);
+    }
+    setTaskRunning(false);
+  };
+
+  // ---- Đọc màn hình (vision) ----
+  const readScreen = async () => {
+    setVisionLoading(true);
+    try {
+      const r = await apiFetch('/services/browser/vision', {
+        method: 'POST',
+        body: JSON.stringify({ prompt: 'Mô tả nội dung đang hiển thị trên màn hình và các nút đáng chú ý.' }),
+      });
+      if (r && r.success) {
+        setSteps((prev) => [...prev.slice(-199), { n: '👁', thought: r.text, action: 'vision', ok: true, message: r.model }]);
+      } else {
+        setSteps((prev) => [...prev.slice(-199), { n: '👁', thought: r?.error || 'Không đọc được màn hình', action: 'vision', ok: false }]);
+      }
+    } catch (e) {
+      setSteps((prev) => [...prev.slice(-199), { n: '👁', thought: e.message, action: 'vision', ok: false }]);
+    } finally {
+      setVisionLoading(false);
+    }
+  };
+
+  // ---- Cuộn liên tục (TikTok/shorts) ----
+  const scrollContinuous = async (durationMs = 10000) => {
+    try {
+      await apiFetch('/services/browser/scroll-continuous', {
+        method: 'POST',
+        body: JSON.stringify({ deltaY: 260, durationMs, intervalMs: 25 }),
+      });
+    } catch (e) {
+      console.error('scroll continuous:', e);
+    }
+  };
+
   useEffect(() => {
     // Không tự launch khi mở tab (đỡ tốn RAM Chromium) — user bấm Go/Khởi động thì navigate() sẽ launch
     return () => {
@@ -305,6 +395,95 @@ export default function BrowserView({ onClose }) {
           </div>
           <p className="text-[10px] text-slate-500 mt-1">{tx(lang, 'Dùng ngôn ngữ tự nhiên. AI sẽ điều khiển browser.')}</p>
         </div>
+
+        {/* ===== Tác vụ tự động (nhiều bước) + theo dõi bước ===== */}
+        <div className="p-3 border-b border-white/5">
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-300 mb-2">
+            <Bot size={14} className="text-violet-400" />
+            {tx(lang, 'Tác vụ tự động')}
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={taskGoal}
+              onChange={(e) => setTaskGoal(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !taskRunning && startTask()}
+              placeholder={tx(lang, 'VD: tìm và mở bài viết về AI, đọc tiêu đề')}
+              className="flex-1 px-3 py-2 bg-[#0d0e11] border border-white/10 rounded-lg text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-violet-500/50"
+            />
+            {taskRunning ? (
+              <button
+                onClick={stopTask}
+                className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                {tx(lang, 'Dừng')}
+              </button>
+            ) : (
+              <button
+                onClick={startTask}
+                disabled={!taskGoal.trim() || !connected}
+                className="px-3 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
+              >
+                <Zap size={12} />
+              </button>
+            )}
+          </div>
+          {taskInfo && (
+            <div className="mt-1 text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
+              <span className={taskInfo.status === 'running' ? 'text-amber-400' : taskInfo.status === 'done' ? 'text-emerald-400' : 'text-rose-400'}>
+                {taskInfo.status === 'running' ? tx(lang, 'Đang chạy') : taskInfo.status === 'done' ? tx(lang, 'Xong') : taskInfo.status === 'stopped' ? tx(lang, 'Đã dừng') : tx(lang, 'Lỗi')}
+              </span>
+              {taskInfo.steps ? <span>{tx(lang, 'Bước')}: {taskInfo.steps}</span> : null}
+              {taskInfo.summary ? <span className="text-emerald-300/90">{taskInfo.summary}</span> : null}
+              {taskInfo.error ? <span className="text-rose-300/90">{taskInfo.error}</span> : null}
+            </div>
+          )}
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => scrollContinuous(10000)}
+              disabled={!connected}
+              className="px-2 py-1.5 bg-[#1b1d23] hover:bg-[#232630] disabled:opacity-50 text-[11px] text-slate-300 rounded-lg border border-white/5 transition-colors"
+            >
+              {tx(lang, 'Cuộn liên tục 10s')}
+            </button>
+            <button
+              onClick={readScreen}
+              disabled={!connected || visionLoading}
+              className="px-2 py-1.5 bg-[#1b1d23] hover:bg-[#232630] disabled:opacity-50 text-[11px] text-slate-300 rounded-lg border border-white/5 transition-colors flex items-center justify-center gap-1"
+            >
+              {visionLoading ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
+              {tx(lang, 'Đọc màn hình')}
+            </button>
+          </div>
+        </div>
+
+        {steps.length > 0 && (
+          <div className="flex-1 min-h-0 flex flex-col border-b border-white/5">
+            <p className="px-3 pt-3 pb-1 text-[10px] text-slate-500 uppercase tracking-wider">
+              {tx(lang, 'Các bước đã thực hiện')}
+            </p>
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-1.5">
+              {steps.map((s, i) => (
+                <div
+                  key={`${s.n}-${i}`}
+                  className={`text-[11px] leading-snug rounded-md px-2 py-1.5 border ${
+                    s.ok === false
+                      ? 'bg-rose-500/5 border-rose-500/20 text-rose-200'
+                      : 'bg-white/[0.03] border-white/5 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono text-slate-500">{s.n}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 font-mono">{s.action}</span>
+                  </div>
+                  {s.thought && <div className="mt-0.5 text-slate-200">{s.thought}</div>}
+                  {s.error && <div className="mt-0.5 text-rose-300">{s.error}</div>}
+                </div>
+              ))}
+              <div ref={stepsEndRef} />
+            </div>
+          </div>
+        )}
 
         <div className="p-3 border-b border-white/5">
           <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">{tx(lang, 'Thao tác nhanh')}</p>
