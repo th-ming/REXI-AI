@@ -31,8 +31,12 @@ class BrowserStreamService {
     this._screencastHandler = null;
     this._fallbackInterval = null;
     this.streamOpts = {
-      quality: 45, maxWidth: 960, maxHeight: 540, fps: 15, everyNthFrame: 1,
-      scale: 1, viewportWidth: 1280, viewportHeight: 720,
+      // Mặc định chọn theo đo thực tế trên Render free (0.5 vCPU, SwiftShader):
+      //   640×360 @ q30 → ~18 fps kéo dài, ~21 fps nếu height 270.
+      //   1280×720 chỉ ~4-6 fps (raster 4× nặng hơn) → không đạt mục tiêu 10 fps.
+      //   viewportWidth < 640 → Chromium KHÔNG composite (0.4 fps) — xem _applyEmulation.
+      quality: 30, maxWidth: 640, maxHeight: 360, fps: 60, everyNthFrame: 1,
+      scale: 1, viewportWidth: 640, viewportHeight: 360,
     };
     this._lastFrameTs = 0;
     this._droppedFrames = 0;
@@ -288,8 +292,9 @@ class BrowserStreamService {
     if (typeof opts.maxHeight === 'number') this.streamOpts.maxHeight = opts.maxHeight | 0;
     if (typeof opts.everyNthFrame === 'number') this.streamOpts.everyNthFrame = Math.max(1, Math.min(10, opts.everyNthFrame | 0));
     if (typeof opts.scale === 'number') this.streamOpts.scale = Math.max(0.5, Math.min(2, opts.scale));
-    if (typeof opts.viewportWidth === 'number') this.streamOpts.viewportWidth = Math.max(320, Math.min(1920, opts.viewportWidth | 0));
-    if (typeof opts.viewportHeight === 'number') this.streamOpts.viewportHeight = Math.max(240, Math.min(1080, opts.viewportHeight | 0));
+    // Floor 640×270 — xem _applyEmulation: width < 640 ⇒ Chromium không composite.
+    if (typeof opts.viewportWidth === 'number') this.streamOpts.viewportWidth = Math.max(640, Math.min(1920, opts.viewportWidth | 0));
+    if (typeof opts.viewportHeight === 'number') this.streamOpts.viewportHeight = Math.max(270, Math.min(1080, opts.viewportHeight | 0));
     // Đổi viewport ⇒ khung capture phải theo tỉ lệ mới (để ảnh không méo + FE ánh xạ click đúng).
     if (opts.viewportWidth !== undefined || opts.viewportHeight !== undefined) {
       if (opts.maxWidth === undefined) this.streamOpts.maxWidth = this.streamOpts.viewportWidth;
@@ -511,8 +516,12 @@ class BrowserStreamService {
   // - deviceScaleFactor: nhân thêm vào số pixel raster (giữ nguyên layout CSS).
   async _applyEmulation() {
     if (!this.cdpSession) return;
-    const vw = Math.max(320, Math.min(1920, Number(this.streamOpts.viewportWidth) || 1280));
-    const vh = Math.max(240, Math.min(1080, Number(this.streamOpts.viewportHeight) || 720));
+    // FLOOR 640×270: Chromium KHÔNG composite khi viewport width < 640
+    // (đo thực tế: 480/560/600/620 → cdp 0.4 fps; 640 → 18 fps; 640×270 → 21 fps).
+    // Đây là giới hạn của engine, không phải của logic này — clamp để không ai
+    // vô tình rơi vào vùng chết (màn hình đen, không frame).
+    const vw = Math.max(640, Math.min(1920, Number(this.streamOpts.viewportWidth) || 640));
+    const vh = Math.max(270, Math.min(1080, Number(this.streamOpts.viewportHeight) || 360));
     const dsf = Math.max(0.5, Math.min(2, Number(this.streamOpts.scale) || 1));
     try {
       await this.cdpSession.send('Emulation.setDeviceMetricsOverride', {
@@ -592,8 +601,9 @@ class BrowserStreamService {
       }
 
       const context = await this.browser.newContext({
-        // Khớp canvas FE (1280×720) để toạ độ click bám đúng + giảm 10% diện tích raster.
-        viewport: { width: 1280, height: 720 },
+        // Khớp canvas FE + mặc định stream (640×360) → giảm tải RASTER ngay từ đầu.
+        // _applyEmulation() sẽ override lại bằng CDP theo streamOpts.
+        viewport: { width: 640, height: 360 },
         locale: 'vi-VN',
         timezoneId: 'Asia/Ho_Chi_Minh',
         deviceScaleFactor: 1,

@@ -38,9 +38,9 @@ export default function BrowserView({ onClose }) {
   const [taskRunning, setTaskRunning] = useState(false);
   const [taskInfo, setTaskInfo] = useState(null);
   const [visionLoading, setVisionLoading] = useState(false);
-  const [streamRes, setStreamRes] = useState({ w: 1280, h: 720 });
+  const [streamRes, setStreamRes] = useState({ w: 640, h: 360 });
   // Viewport thật của trang (CSS px) — server có thể đổi để giảm tải raster.
-  const [viewport, setViewport] = useState({ w: 1280, h: 720 });
+  const [viewport, setViewport] = useState({ w: 640, h: 360 });
   const stepsEndRef = useRef(null);
 
   useEffect(() => {
@@ -133,11 +133,11 @@ export default function BrowserView({ onClose }) {
         // Frame ảnh đi qua kênh BINARY (stream-frames) — SSE chỉ mang event.
         if (msg.type === 'hello' && msg.opts) {
           // Server có thể đổi kích thước stream → cập nhật nhãn cho đúng.
-          setStreamRes({ w: Number(msg.opts.maxWidth) || 1280, h: Number(msg.opts.maxHeight) || 720 });
+          setStreamRes({ w: Number(msg.opts.maxWidth) || 640, h: Number(msg.opts.maxHeight) || 360 });
           // Viewport thật của trang (CSS px) — dùng để ánh xạ toạ độ click.
           setViewport({
-            w: Number(msg.opts.viewportWidth) || 1280,
-            h: Number(msg.opts.viewportHeight) || 720,
+            w: Number(msg.opts.viewportWidth) || 640,
+            h: Number(msg.opts.viewportHeight) || 360,
           });
         }
         if (msg.type === 'auth_failed') {
