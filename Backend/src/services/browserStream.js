@@ -306,16 +306,20 @@ class BrowserStreamService {
         res.write(Buffer.concat([this._frameBoundary, buf]));
       } catch (e) { this._frameSubs.delete(res); }
     });
-    // Kênh SSE (JSON) — dùng cho event + client cũ.
-    const message = JSON.stringify({ type: 'frame', data: `data:${mime};base64,${b64}`, ts: Date.now() });
-    this.clients.forEach((c) => { try { if (c.readyState === WebSocket.OPEN) c.send(message); } catch (e) {} });
-    this.subscribers.forEach((res) => {
-      try {
-        if (res.writableEnded || res.destroyed) { this.subscribers.delete(res); return; }
-        if (res.writableLength > 3 * 1024 * 1024) { this._droppedFrames++; return; } // client tắc nghẽn → bỏ frame
-        res.write(`data: ${message}\n\n`);
-      } catch (e) { this.subscribers.delete(res); }
-    });
+    // Kênh SSE (JSON) — CHỈ dựng message khi còn subscriber SSE cần frame.
+    // Nếu có client dùng kênh BINARY, bỏ qua luôn: JSON.stringify ~40KB/frame
+    // trên 0.5 vCPU là đủ giết mất 1/3 fps.
+    if (this.subscribers.size > 0) {
+      const message = JSON.stringify({ type: 'frame', data: `data:${mime};base64,${b64}`, ts: Date.now() });
+      this.subscribers.forEach((res) => {
+        try {
+          if (res.writableEnded || res.destroyed) { this.subscribers.delete(res); return; }
+          if (res.writableLength > 3 * 1024 * 1024) { this._droppedFrames++; return; } // client tắc nghẽn → bỏ frame
+          res.write(`data: ${message}\n\n`);
+        } catch (e) { this.subscribers.delete(res); }
+      });
+    }
+    this.clients.forEach((c) => { try { if (c.readyState === WebSocket.OPEN) c.send(`data: ${JSON.stringify({ type: 'frame', data: `data:${mime};base64,${b64}`, ts: Date.now() })}\n\n`); } catch (e) {} });
     this._stat.sent++;
     this._stat.bytes += buf.length;
   }
