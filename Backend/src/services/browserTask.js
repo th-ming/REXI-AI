@@ -123,9 +123,10 @@ class BrowserTaskRunner {
         // type/press LẶP LẠI là BÌNH THƯỜNG (gõ nhiều đáp án vào CÙNG một ô, vd game toán).
         // Chỉ coi là kẹt khi TRANG không đổi → chữ ký kèm "dấu vân tay" nội dung đang thấy.
         const stateTok = String(obs.vp || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-        const sig = action.type + '|' + sigPayload +
-          (action.type === 'scroll' ? '@' + Math.round((Number(obs.scrollY) || 0) / 40) : '') +
-          ((action.type === 'type' || action.type === 'press') ? '@' + stateTok : '');
+        // Chữ ký KÈM "dấu vân tay" TRẠNG THÁI TRANG → cùng một hành động nhưng TRANG ĐÃ ĐỔI thì KHÔNG tính là lặp
+        // (sửa hẳn việc type nhiều đáp án vào một ô, hay find 'Start' sau khi đã vào game, bị chẩn đoán lặp sai).
+        const sig = action.type + '|' + sigPayload + '@' +
+          (action.type === 'scroll' ? 'y' + Math.round((Number(obs.scrollY) || 0) / 40) : stateTok);
         task.sigCounts = task.sigCounts || {};
         const repeatCount = (task.sigCounts[sig] || 0) + 1;
         task.sigCounts[sig] = repeatCount;
@@ -242,7 +243,7 @@ class BrowserTaskRunner {
       'GÕ RỒI GỬI LUÔN trong 1 bước (vd điền đáp án + Enter): {"type":"type","text":"<giá trị>","key":"Enter"}.\n' +
       '- Cuộn → {"type":"scroll","direction":"down","amount":600}.\n' +
       '- Đọc nội dung đang hiển thị (text) → {"type":"read"} — dùng khi cần trích câu trả lời/tên mục.\n' +
-      '- TÌM & BẤM một mục/đoạn/NÚT có tên trên trang (kể cả mục lục bị thu gọn, hoặc nút như "Start") → {"type":"find","text":"Start"}. ' +
+      '- TÌM & BẤM một mục/đoạn/NÚT có tên trên trang (kể cả mục lục bị thu gọn, hoặc một nút bấm) → {"type":"find","text":"<đúng chữ hiển thị trên nút/mục>"}. ' +
       'find TỰ BẤM nếu khớp là nút/submit, hoặc nhảy tới nếu là chuyên mục; ĐỪNG cuộn mù tìm chữ và ĐỪNG giả vờ không thấy nút.\n' +
       '- Cần đọc hình/canvas/game → {"type":"vision","text":"<câu hỏi cụ thể>"} (chỉ khi thật sự cần).\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
@@ -250,6 +251,10 @@ class BrowserTaskRunner {
       'có trong bản đồ → dùng {"type":"find"} hoặc click thẳng anchor href tương ứng. CHỈ cuộn khi thực sự cần.\n' +
       'CUỘN: được phép cuộn nhiều lần liên tiếp để đọc hết nội dung — miễn là vị trí scrollY vẫn tăng.\n' +
       'Chỉ khi scrollY không còn tăng (đã tới cuối trang) mới đổi hành động.\n' +
+      'THÍCH ỨNG: mỗi bước phải dựa trên TRẠNG THÁI MỚI NHẤT (NỘI DUNG ĐANG NHÌN THẤY + PHẦN TỬ TƯƠNG TÁC). ' +
+      'Nếu bước trước THÀNH CÔNG và trang ĐÃ ĐỔI, KHÔNG lặp lại hành động cũ — làm bước phù hợp với trạng thái mới. ' +
+      'Ví dụ: bấm Start xong mà thấy ô nhập + phép tính/đồng hồ đếm → đừng tìm Start nữa, mà đọc phép tính rồi gõ đáp án.\n' +
+      'GẶP LỖI "Không thấy X": đừng thử lại y hệt — đọc trang để xem trạng thái mới rồi chọn hành động khác.\n' +
       'CHỐNG LẶP: không lặp lại đúng một hành động khi trang đã ở trạng thái đó.\n' +
       'Nếu trang đã ở đúng trạng thái, hãy {"type":"read"} để lấy nội dung rồi kết luận done=true (kèm summary).\n' +
       'Đây là lần chạy TỰ ĐỘNG LIÊN TỤC: cứ trả về bước tiếp theo, đừng dừng lại để hỏi.';
