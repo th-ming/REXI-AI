@@ -128,7 +128,10 @@ class BrowserTaskRunner {
         const probe = await this._probeMath();
         const auto = (probe && probe.eq && probe.hasInput) ? { ms: (probe.secs != null && probe.secs > 0) ? Math.min(120000, probe.secs * 1000 + 2500) : 122000, ref: '' } : null;
         const over = (probe && !probe.hasInput && probe.score != null && (probe.over || probe.secs === 0)) ? { summary: 'Game kết thúc (hết giờ). Điểm cuối cùng: ' + probe.score + '.' } : null;
-        if (over) {
+        if (probe && probe.startable && !auto && !over && (task.macroRuns || 0) < 8) {
+          console.log('[BrowserTask] SETUP — bấm Start (tất định)');
+          decision = { thought: 'SETUP — bấm Start (tất định) || ' + dbg, done: false, action: { type: 'macro', text: 'start' } };
+        } else if (over) {
           console.log('[BrowserTask] game kết thúc — chốt điểm: ' + over.summary);
           decision = { thought: 'GAME OVER — ' + over.summary + ' || ' + dbg, done: true, summary: over.summary };
         } else if (auto && (task.macroRuns || 0) < 8) {
@@ -600,6 +603,24 @@ class BrowserTaskRunner {
         }
         case 'macro': {
           const name = String(a.name || a.text || '').toLowerCase();
+          if (/start/.test(name)) {
+            const found = await page.evaluate(() => {
+              const els = Array.from(document.querySelectorAll('input[type=submit], button, input[type=button]'));
+              const b = els.find((e) => /start/i.test((e.value || e.textContent || '').trim()));
+              if (!b) return false;
+              b.setAttribute('data-agent-start', '1');
+              return true;
+            }).catch(() => false);
+            if (!found) return { ok: false, error: 'không thấy nút Start' };
+            try { await page.click('[data-agent-start="1"]', { timeout: 6000 }); }
+            catch (e1) {
+              try { await page.locator('[data-agent-start="1"]').evaluate((el) => el.click()); }
+              catch (e2) { return { ok: false, error: 'bấm Start lỗi: ' + e2.message }; }
+            }
+            await page.evaluate(() => { const e = document.querySelector('[data-agent-start]'); if (e) e.removeAttribute('data-agent-start'); }).catch(() => {});
+            await this._afterNav();
+            return { ok: true, message: 'Đã bấm Start (tất định)' };
+          }
           if (/arith|math|toán|toan|tính|tinh|solve|số học|so hoc/.test(name)) {
             this.task.macroRuns = (this.task.macroRuns || 0) + 1;
             return await this._macroArithmetic(Number(a.amount) || 25000, a.selector || '');
@@ -629,7 +650,9 @@ class BrowserTaskRunner {
       const lm = norm.match(/seconds\s*left:\s*(-?\d+)/i);
       const inp = document.querySelector('input[type=text], input[type=number], input:not([type])');
       const hasInput = !!inp && inp.offsetParent !== null && !inp.disabled;
-      return { eq: eqm ? eqm[0] : '', hasInput, score: sm ? Number(sm[1]) : null, secs: lm ? Number(lm[1]) : null, over: /try again/i.test(norm) };
+      const startBtn = Array.from(document.querySelectorAll('input[type=submit], button, input[type=button]')).find((b) => /start/i.test((b.value || b.textContent || '').trim()));
+      const startable = !!startBtn && !eqm;
+      return { eq: eqm ? eqm[0] : '', hasInput, startable, score: sm ? Number(sm[1]) : null, secs: lm ? Number(lm[1]) : null, over: /try again/i.test(norm) };
     }).catch(() => null);
   }
 
