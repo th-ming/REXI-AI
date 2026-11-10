@@ -124,8 +124,12 @@ class BrowserTaskRunner {
         //    liên tục, KHÔNG cần hỏi LLM (nhanh hơn nhiều, không phụ thuộc model nào chọn đúng).
         let decision = null;
         let lastErr = null;
-        const auto = this._detectArithmetic(obs);
-        if (auto && (task.macroRuns || 0) < 8) {
+        const over = this._detectGameOver(obs);
+        const auto = over ? null : this._detectArithmetic(obs);
+        if (over) {
+          console.log('[BrowserTask] game kết thúc — chốt điểm: ' + over.summary);
+          decision = { thought: 'Game đã kết thúc (hết giờ) — chốt điểm cuối cùng.', done: true, summary: over.summary };
+        } else if (auto && (task.macroRuns || 0) < 8) {
           console.log('[BrowserTask] macro TỰ ĐỘNG (phát hiện game toán) ms=' + auto.ms + ' ref=' + (auto.ref || '-'));
           decision = {
             thought: 'Trang là game toán (thấy phép tính + ô nhập) — tự động giải liên tục.',
@@ -608,6 +612,17 @@ class BrowserTaskRunner {
     }
   }
 
+  // Nhận diện GAME ĐÃ KẾT THÚC: có "Score: N" + dấu hiệu hết game (hết giờ / Try again / change settings)
+  // và KHÔNG còn ô nhập → chốt luôn điểm cuối, khỏi tốn bước LLM đọc lại.
+  _detectGameOver(obs) {
+    const vp = String((obs && obs.vp) || '');
+    const ms = vp.match(/score:\s*(\d+)/i);
+    const overSignal = /seconds\s*left:\s*0\b/i.test(vp) || /try again|change settings/i.test(vp);
+    const hasInput = ((obs && obs.els) || []).some((e) => e.tag === 'input');
+    if (ms && overSignal && !hasInput) return { summary: 'Game kết thúc (hết giờ). Điểm cuối cùng: ' + ms[1] + '.' };
+    return null;
+  }
+
   // Nhận diện TRANG GAME TOÁN: có phép tính số học đang hiển thị + một ô nhập (đáp án) + ngữ cảnh toán/game.
   // Dùng để CHỌN MACRO TẤT ĐỊNH (không cần LLM) khi đang ở game/quiz số học.
   // Trả { ms, ref } — ms là ngân sách (lấy từ "Seconds left: N" nếu có), ref là selector ô nhập đáng tin.
@@ -616,13 +631,14 @@ class BrowserTaskRunner {
     if (!/-?\d+\s*[+\-\u2212\u2013\u2014\u00d7x*\u00f7/]\s*-?\d+/.test(vp)) return null;
     const els = (obs && obs.els) || [];
     const inputEl = els.find((e) => e.tag === 'input');
-    const hasTimer = /seconds\s*left/i.test(vp);
-    // Cần ô nhập (đáp án) HOẶC đồng hồ "Seconds left" — tin cậy cả khi _interactiveMap không bắt kịp ô nhập.
-    if (!inputEl && !hasTimer) return null;
+    const m = vp.match(/seconds\s*left:\s*(-?\d+)/i);
+    const secs = m ? Number(m[1]) : null;
+    if (secs != null && secs <= 0) return null; // HẾT GIỜ → game over, KHÔNG fire lại (tránh lặp vô ích)
+    // Cần ô nhập (đáp án) HOẶC đồng hồ "Seconds left" đang chạy — tin cậy cả khi _interactiveMap không bắt kịp ô nhập.
+    if (!inputEl && secs == null) return null;
     const ctx = (String(obs.url || '') + ' ' + String(obs.title || '') + ' ' + String(this.task.goal || '')).toLowerCase();
     if (!/zetamac|arith|\bmath\b|to[aá]n|game|quiz|drill|ph[eé]p t[ií]nh|speed|s[oố] h[oọ]c/.test(ctx)) return null;
-    const m = vp.match(/seconds\s*left:\s*(\d+)/i);
-    const ms = m ? Math.min(120000, Number(m[1]) * 1000 + 2500) : 25000;
+    const ms = secs != null ? Math.min(120000, secs * 1000 + 2500) : 25000;
     return { ms, ref: inputEl ? (inputEl.ref || '') : '' };
   }
 
