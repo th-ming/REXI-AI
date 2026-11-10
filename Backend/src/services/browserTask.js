@@ -120,17 +120,28 @@ class BrowserTaskRunner {
 
       try {
         const obs = await this._observe();
-        // Quyết định: thử lại nhiều lần (backoff) nếu provider lỗi/quota — KHÔNG đốt step.
+        // ── ĐƯỜNG TẮT TẤT ĐỊNH: trang là GAME TOÁN (phép tính + ô nhập) → chạy macro giải
+        //    liên tục, KHÔNG cần hỏi LLM (nhanh hơn nhiều, không phụ thuộc model nào chọn đúng).
         let decision = null;
         let lastErr = null;
-        for (let att = 0; att < 3 && !decision; att++) {
-          try {
-            decision = await this._decide(task, obs);
-            lastErr = null;
-          } catch (e) {
-            lastErr = e;
-            console.warn('[BrowserTask] quyết định lỗi (lần ' + (att + 1) + '):', e.message);
-            await new Promise((r) => setTimeout(r, 1200 * (att + 1)));
+        const auto = this._detectArithmetic(obs);
+        if (auto && (task.macroRuns || 0) < 8) {
+          decision = {
+            thought: 'Trang là game toán (thấy phép tính + ô nhập) — tự động giải liên tục.',
+            done: false,
+            action: { type: 'macro', text: 'arithmetic', amount: auto.ms, selector: auto.ref || '' },
+          };
+        } else {
+          // Ngược lại: LLM quyết định — thử lại nhiều lần (backoff) nếu provider lỗi/quota, KHÔNG đốt step.
+          for (let att = 0; att < 3 && !decision; att++) {
+            try {
+              decision = await this._decide(task, obs);
+              lastErr = null;
+            } catch (e) {
+              lastErr = e;
+              console.warn('[BrowserTask] quyết định lỗi (lần ' + (att + 1) + '):', e.message);
+              await new Promise((r) => setTimeout(r, 1200 * (att + 1)));
+            }
           }
         }
         if (!decision) throw lastErr || new Error('Không lấy được quyết định từ LLM');
@@ -157,7 +168,8 @@ class BrowserTaskRunner {
           const keys = Object.keys(task.sigCounts).sort((a, b) => task.sigCounts[b] - task.sigCounts[a]);
           keys.slice(30).forEach((k) => delete task.sigCounts[k]);
         }
-        if (repeatCount >= 3) {
+        // Macro tự chạy nhiều câu trong 1 bước → KHÔNG áp dụng chống lặp cho nó.
+        if (repeatCount >= 3 && action.type !== 'macro') {
           const stuckType = action.type;
           if (task.readText) {
             action = { type: 'wait', amount: 200 };
@@ -271,6 +283,7 @@ class BrowserTaskRunner {
       '- Chuỗi thao tác cơ học LẶP (vd GIẢI SỐ HỌC liên tục: thấy phép tính + ô nhập, cần trả lời nhanh nhiều câu) → ' +
       '{"type":"macro","text":"arithmetic","amount":25000} — tự đọc biểu thức, TÍNH rồi gõ đáp án liên tục trong ~amount ms. ' +
       'DÙNG khi thấy phép tính số học + ô nhập (game/quiz toán) để khỏi tốn 1 bước cho mỗi câu.\n' +
+      'QUY TẮC SẮT: hễ trên trang có PHÉP TÍNH số học (vd "89 + 53") kèm MỘT ô nhập đáp án → hành động tiếp theo BẮT BUỘC là macro, KHÔNG dùng find/click/scroll lung tung.\n' +
       '- Nhiệm vụ đã xong → done=true, summary ngắn gọn. KHÔNG giả vờ xong khi chưa xác nhận.\n' +
       'CÁCH TÌM CHUYÊN MỤC: xem "BẢN ĐỒ TRANG" (danh sách mục/anchor). Nếu mục tiêu nhắc tới một mục ' +
       'có trong bản đồ → dùng {"type":"find"} hoặc click thẳng anchor href tương ứng. CHỈ cuộn khi thực sự cần.\n' +
@@ -296,7 +309,7 @@ class BrowserTaskRunner {
 
     const fullPrompt = system + '\n\n' + user +
       '\n\nCHỈ trả về MỘT đối tượng JSON đúng schema sau, không thêm chữ khác:\n' +
-      JSON.stringify({ thought: '<câu>', done: false, summary: '<khi done>', action: { type: 'click|clickAt|type|press|scroll|goto|wait|read|vision|find', selector: '', text: '', key: '', direction: '', url: '', x: 0, y: 0, amount: 0 } });
+      JSON.stringify({ thought: '<câu>', done: false, summary: '<khi done>', action: { type: 'click|clickAt|type|press|scroll|goto|wait|read|vision|find|macro', selector: '', text: '', key: '', direction: '', url: '', x: 0, y: 0, amount: 0 } });
 
     // 1) CHUỖI MODEL NHANH (nhiều provider) — thử LẦN LƯỢT, ưu tiên độ trễ thấp + JSON ổn.
     //    Model ghim tay (task.model, vd khi tạo tác vụ) được thử trước, chạy trên Groq.
@@ -581,7 +594,8 @@ class BrowserTaskRunner {
         case 'macro': {
           const name = String(a.name || a.text || '').toLowerCase();
           if (/arith|math|toán|toan|tính|tinh|solve|số học|so hoc/.test(name)) {
-            return await this._macroArithmetic(Number(a.amount) || 25000);
+            this.task.macroRuns = (this.task.macroRuns || 0) + 1;
+            return await this._macroArithmetic(Number(a.amount) || 25000, a.selector || '');
           }
           return { ok: false, error: 'macro không rõ: ' + (a.name || a.text || '') };
         }
@@ -593,40 +607,96 @@ class BrowserTaskRunner {
     }
   }
 
+  // Nhận diện TRANG GAME TOÁN: có phép tính số học đang hiển thị + một ô nhập (đáp án) + ngữ cảnh toán/game.
+  // Dùng để CHỌN MACRO TẤT ĐỊNH (không cần LLM) khi đang ở game/quiz số học.
+  // Trả { ms, ref } — ms là ngân sách (lấy từ "Seconds left: N" nếu có), ref là selector ô nhập đáng tin.
+  _detectArithmetic(obs) {
+    const vp = String((obs && obs.vp) || '');
+    if (!/-?\d+\s*[+\-\u2212\u2013\u2014\u00d7x*\u00f7/]\s*-?\d+/.test(vp)) return null;
+    const els = (obs && obs.els) || [];
+    const inputEl = els.find((e) => e.tag === 'input');
+    if (!inputEl) return null;
+    const ctx = (String(obs.url || '') + ' ' + String(obs.title || '') + ' ' + String(this.task.goal || '')).toLowerCase();
+    if (!/zetamac|arith|\bmath\b|to[aá]n|game|quiz|drill|ph[eé]p t[ií]nh|speed|s[oố] h[oọ]c/.test(ctx)) return null;
+    const m = vp.match(/seconds\s*left:\s*(\d+)/i);
+    const ms = m ? Math.min(120000, Number(m[1]) * 1000 + 2500) : 25000;
+    return { ms, ref: inputEl.ref || '' };
+  }
+
   // MACRO: tự đọc biểu thức số học đang hiển thị, tính và gõ đáp án LIÊN TỤC trong `ms` (game/quiz toán).
   // Không gọi LLM mỗi câu → nhanh gấp nhiều lần so với vòng observe→decide→exec từng bước.
-  async _macroArithmetic(ms) {
+  // inputRef: selector ô nhập (ưu tiên [data-agent-el="N"] đã gắn ở _interactiveMap) — tránh bịa selector.
+  async _macroArithmetic(ms, inputRef) {
     const page = this.stream.page;
     const budget = Math.min(120000, Math.max(3000, ms || 25000));
     const t0 = Date.now();
     const deadline = t0 + budget;
+
+    // Chuẩn hoá − – — × ÷ về ASCII rồi bóc phép tính CUỐI CÙNG trên trang.
+    const readEq = () => page.evaluate(() => {
+      const t = (document.body.innerText || '')
+        .replace(/[\u2212\u2013\u2014]/g, '-').replace(/[\u00d7\u2715\u2a2f]/g, '*').replace(/\u00f7/g, '/');
+      const m = t.match(/-?\d+\s*[+\-*/]\s*-?\d+/g);
+      return m ? m[m.length - 1].replace(/\s+/g, '') : '';
+    }).catch(() => '');
+
+    // "Seconds left: N" → biết khi nào hết giờ để dừng sớm (khỏi chờ hết ngân sách).
+    const secondsLeft = () => page.evaluate(() => {
+      const m = (document.body.innerText || '').match(/seconds\s*left:\s*(-?\d+)/i);
+      return m ? Number(m[1]) : null;
+    }).catch(() => null);
+
+    const inputLoc = () => {
+      if (inputRef) {
+        const ref = page.locator(inputRef).first();
+        if (ref) return ref;
+      }
+      return page.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]), textarea').first();
+    };
+
     let solved = 0, fails = 0, lastEq = '';
     while (Date.now() < deadline && !this.stopped) {
-      // Biểu thức số học gần nhất trên trang (chuẩn hoá − – — × ÷ về ASCII).
-      const eq = await page.evaluate(() => {
-        const t = (document.body.innerText || '')
-          .replace(/[\u2212\u2013\u2014]/g, '-').replace(/[\u00d7\u2715\u2a2f]/g, '*').replace(/\u00f7/g, '/');
-        const m = t.match(/-?\d+\s*[+\-*/]\s*-?\d+/g);
-        return m ? m[m.length - 1].replace(/\s+/g, '') : '';
-      }).catch(() => '');
+      const secs = await secondsLeft();
+      if (secs != null && secs <= 0) break; // hết giờ → dừng
+      const eq = await readEq();
       const mm = eq && eq.match(/^(-?\d+)([+\-*/])(-?\d+)$/);
-      if (!mm) { await page.waitForTimeout(150).catch(() => {}); continue; }
+      if (!mm) {
+        // Không thấy phép tính — có thể đang chuyển trang/hết giờ.
+        if (++fails >= 12) break;
+        await page.waitForTimeout(120).catch(() => {});
+        continue;
+      }
+      if (eq === lastEq) {
+        // Đề CHƯA đổi → chờ, TUYỆT ĐỐI không nộp lại (tránh trả lời nhầm sang đề mới).
+        if (++fails >= 12) break;
+        await page.waitForTimeout(40).catch(() => {});
+        continue;
+      }
       const x = Number(mm[1]), y = Number(mm[3]), op = mm[2];
       let ans;
       if (op === '+') ans = x + y;
       else if (op === '-') ans = x - y;
       else if (op === '*') ans = x * y;
       else ans = y === 0 ? NaN : Math.round(x / y);
-      if (!Number.isFinite(ans)) { await page.waitForTimeout(120).catch(() => {}); continue; }
+      if (!Number.isFinite(ans)) { await page.waitForTimeout(40).catch(() => {}); continue; }
       try {
-        const inp = page.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]), textarea').first();
-        await inp.fill(String(ans), { timeout: 1500 });
+        await inputLoc().fill(String(ans), { timeout: 1200 });
         await page.keyboard.press('Enter');
-        if (eq === lastEq) fails++; else { solved++; fails = 0; }
-        lastEq = eq;
-      } catch (e) { fails++; }
-      if (fails >= 8) break; // ô nhập biến mất (hết giờ/chuyển trang)
-      await page.waitForTimeout(15).catch(() => {});
+        solved++; fails = 0; lastEq = eq;
+        if (solved % 25 === 0) {
+          this.stream._sendEvent({ type: 'task_progress', taskId: this.task.id, solved, seconds: Math.round((Date.now() - t0) / 1000) });
+        }
+        // Chờ đề đổi (tối đa 300ms) → đảm bảo lần lặp sau đọc đề MỚI, không nộp trùng.
+        const tw = Date.now();
+        while (Date.now() - tw < 300) {
+          const e2 = await readEq();
+          if (e2 && e2 !== eq) break;
+          await page.waitForTimeout(15).catch(() => {});
+        }
+      } catch (e) {
+        if (++fails >= 6) break; // ô nhập biến mất (hết giờ/chuyển trang)
+      }
+      await page.waitForTimeout(8).catch(() => {});
     }
     return { ok: true, message: 'Macro giải toán: ' + solved + ' câu / ' + Math.round((Date.now() - t0) / 1000) + 's' };
   }
