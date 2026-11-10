@@ -617,7 +617,9 @@ class BrowserTaskRunner {
   _detectGameOver(obs) {
     const vp = String((obs && obs.vp) || '');
     const ms = vp.match(/score:\s*(\d+)/i);
-    const overSignal = /seconds\s*left:\s*0\b/i.test(vp) || /try again|change settings/i.test(vp);
+    // "change settings" LUÔN có cả khi đang chơi → KHÔNG dùng làm dấu hiệu kết thúc.
+    // Dấu hiệu kết thúc chỉ: "Try again" (chỉ hiện khi hết game) hoặc hết giờ "Seconds left: 0".
+    const overSignal = /try again/i.test(vp) || /seconds\s*left:\s*0\b/i.test(vp);
     const hasInput = ((obs && obs.els) || []).some((e) => e.tag === 'input');
     if (ms && overSignal && !hasInput) return { summary: 'Game kết thúc (hết giờ). Điểm cuối cùng: ' + ms[1] + '.' };
     return null;
