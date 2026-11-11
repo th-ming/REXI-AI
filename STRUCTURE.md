@@ -2,9 +2,9 @@
 
 > **TỰ SINH** bởi `tools/dev/gen_map.mjs` từ quét repo thật — **KHÔNG sửa tay** (sẽ bị ghi đè).
 > Cập nhật: `node tools/dev/gen_map.mjs` (từ project root). Bản đồ tương tác 2D/3D: [`docs/map.html`](docs/map.html).
-> Sinh lúc: `2026-11-09 12:03:14`
+> Sinh lúc: `2026-11-11 12:18:17`
 
-**Thống kê:** 128 file/module · 213 API request · 33 bảng DB · 589 liên kết · 25 service · 29 UI component.
+**Thống kê:** 129 file/module · 224 API request · 33 bảng DB · 611 liên kết · 26 service · 29 UI component.
 
 ## 1. Sơ đồ tầng (luồng dữ liệu)
 
@@ -51,7 +51,7 @@ flowchart TD
 | `/api/admin/import-sqlite` | `express` | 0 |
 | `/api/auth` | `Backend/src/routes/auth.routes.js` | 12 |
 | `/api/chat` | `Backend/src/routes/chat.routes.js` | 29 |
-| `/api/services` | `Backend/src/routes/services.routes.js` | 82 |
+| `/api/services` | `Backend/src/routes/services.routes.js` | 93 |
 | `/api/scrape` | `Backend/src/routes/scrape.routes.js` | 15 |
 | `/api/models` | `Backend/src/routes/models.routes.js` | 19 |
 | `/api/media` | `Backend/src/routes/media.routes.js` | 2 |
@@ -77,26 +77,26 @@ Request đi từ **ui/flib → /api/… → middleware → route → service →
 
 | File | Dòng | Hàm≈ | KB | Endpoints | Import nội bộ |
 |---|---:|---:|---:|---:|---|
-| `Frontend/src/App.jsx` | 2606 | 58 | 127.2 |  | 24 |
-| `Frontend/src/AdminPanel.jsx` | 1985 | 43 | 116.1 |  | 4 |
-| `Frontend/src/components/YouTubeTab.jsx` | 1172 | 31 | 61.5 |  | 2 |
-| `Frontend/src/components/VideoCreatorTab.jsx` | 1003 | 15 | 59.7 |  | 1 |
+| `Frontend/src/App.jsx` | 2606 | 58 | 133.6 |  | 24 |
+| `Frontend/src/AdminPanel.jsx` | 1985 | 43 | 114.9 |  | 4 |
+| `Frontend/src/components/YouTubeTab.jsx` | 1172 | 31 | 61.3 |  | 2 |
+| `Frontend/src/components/VideoCreatorTab.jsx` | 1003 | 15 | 59.1 |  | 1 |
 | `Frontend/src/components/ScrapePanel.jsx` | 1089 | 19 | 56.7 |  | 2 |
-| `Frontend/src/components/GitHubTrending.jsx` | 1093 | 17 | 51.7 |  | 3 |
-| `Frontend/src/components/StudioTab.jsx` | 807 | 19 | 42.0 |  | 2 |
+| `Frontend/src/components/GitHubTrending.jsx` | 1093 | 17 | 51.6 |  | 3 |
+| `Frontend/src/components/StudioTab.jsx` | 807 | 19 | 41.9 |  | 2 |
 | `Frontend/src/components/TikTokFeedTab.jsx` | 693 | 12 | 34.1 |  | 2 |
-| `Frontend/src/components/ChatTab.jsx` | 500 | 5 | 31.7 |  | 2 |
+| `Frontend/src/components/ChatTab.jsx` | 500 | 5 | 30.9 |  | 2 |
 | `Frontend/src/components/IPTVTab.jsx` | 611 | 8 | 29.7 |  | 3 |
-| `Frontend/src/components/BrowserView.jsx` | 413 | 10 | 16.4 |  | 3 |
+| `Frontend/src/components/BrowserView.jsx` | 689 | 17 | 29.4 |  | 3 |
 | `Frontend/src/components/OpenShortsTab.jsx` | 343 | 8 | 16.3 |  | 3 |
-| `Frontend/src/components/Sidebar.jsx` | 293 | 5 | 13.8 |  | 3 |
-| `Frontend/src/components/SettingsModal.jsx` | 267 | 4 | 13.5 |  | 3 |
+| `Frontend/src/components/Sidebar.jsx` | 293 | 5 | 13.6 |  | 3 |
+| `Frontend/src/components/SettingsModal.jsx` | 267 | 4 | 13.4 |  | 3 |
 | `Frontend/src/components/ImageGenTab.jsx` | 245 | 5 | 13.1 |  | 2 |
-| `Frontend/src/components/HelpModal.jsx` | 226 | 0 | 12.8 |  | 1 |
+| `Frontend/src/components/HelpModal.jsx` | 226 | 0 | 12.7 |  | 1 |
 | `Frontend/src/components/VideoEditTab.jsx` | 186 | 4 | 12.5 |  | 2 |
 | `Frontend/src/components/VideoToolsModal.jsx` | 177 | 3 | 8.6 |  | 2 |
 | `Frontend/src/components/OpenCutTab.jsx` | 171 | 5 | 7.9 |  | 3 |
-| `Frontend/src/components/WebAnalyzer.jsx` | 146 | 2 | 7.7 |  | 3 |
+| `Frontend/src/components/WebAnalyzer.jsx` | 146 | 2 | 7.6 |  | 3 |
 | `Frontend/src/components/SocialConnect.jsx` | 174 | 3 | 7.5 |  | 2 |
 | `Frontend/src/components/DocumentsTab.jsx` | 163 | 4 | 7.5 |  | 2 |
 | `Frontend/src/components/SuperToolsModal.jsx` | 75 | 0 | 4.9 |  | 2 |
@@ -122,8 +122,8 @@ Request đi từ **ui/flib → /api/… → middleware → route → service →
 
 | File | Dòng | Hàm≈ | KB | Endpoints | Import nội bộ |
 |---|---:|---:|---:|---:|---|
-| `Backend/src/routes/services.routes.js` | 4269 | 141 | 207.0 | 82 | 20 |
-| `Backend/src/routes/chat.routes.js` | 2140 | 55 | 115.1 | 29 | 23 |
+| `Backend/src/routes/services.routes.js` | 4415 | 154 | 213.2 | 93 | 21 |
+| `Backend/src/routes/chat.routes.js` | 2146 | 55 | 115.5 | 29 | 23 |
 | `Backend/src/routes/models.routes.js` | 1000 | 27 | 52.8 | 19 | 5 |
 | `Backend/src/routes/admin.routes.js` | 669 | 37 | 34.9 | 19 | 3 |
 | `Backend/src/routes/github.routes.js` | 694 | 30 | 28.4 | 20 | 5 |
@@ -147,24 +147,25 @@ Request đi từ **ui/flib → /api/… → middleware → route → service →
 | `Backend/src/middleware/audit.middleware.js` | 59 | 1 | 1.9 |  | 2 |
 | `Backend/src/middleware/rateLimit.js` | 34 | 1 | 1.1 |  |  |
 
-## Backend services (25)
+## Backend services (26)
 
 | File | Dòng | Hàm≈ | KB | Endpoints | Import nội bộ |
 |---|---:|---:|---:|---:|---|
 | `Backend/src/services/scraper.js` | 1480 | 75 | 64.5 |  | 3 |
+| `Backend/src/services/browserStream.js` | 1240 | 6 | 60.4 |  | 6 |
+| `Backend/src/services/browserTask.js` | 776 | 10 | 44.4 |  | 4 |
 | `Backend/src/services/ytdlpService.js` | 862 | 39 | 41.3 |  |  |
-| `Backend/src/services/agentService.js` | 608 | 17 | 31.7 |  | 11 |
+| `Backend/src/services/agentService.js` | 617 | 17 | 32.6 |  | 11 |
 | `Backend/src/services/tiktokService.js` | 633 | 29 | 28.9 |  | 2 |
 | `Backend/src/services/modelRouter.js` | 529 | 24 | 22.8 |  | 3 |
-| `Backend/src/services/browserStream.js` | 547 | 2 | 22.6 |  | 4 |
 | `Backend/src/services/videoEdit.js` | 350 | 23 | 18.1 |  | 2 |
 | `Backend/src/services/agentEngine.js` | 383 | 18 | 17.2 |  | 2 |
 | `Backend/src/services/ragService.js` | 400 | 12 | 15.3 |  | 2 |
 | `Backend/src/services/social.js` | 371 | 13 | 14.8 |  | 2 |
+| `Backend/src/services/internalAgent.js` | 232 | 9 | 13.3 |  | 4 |
 | `Backend/src/services/videoRenderer.js` | 294 | 9 | 12.3 |  |  |
 | `Backend/src/services/chatExecutor.js` | 275 | 14 | 12.1 |  | 2 |
 | `Backend/src/services/realtimeTranscription.js` | 408 | 1 | 10.8 |  |  |
-| `Backend/src/services/internalAgent.js` | 192 | 9 | 10.3 |  | 4 |
 | `Backend/src/services/edgeTTS.js` | 232 | 10 | 9.5 |  |  |
 | `Backend/src/services/quotaManager.js` | 185 | 12 | 7.7 |  | 1 |
 | `Backend/src/services/skillRouter.js` | 133 | 3 | 6.7 |  |  |
@@ -237,7 +238,7 @@ Request đi từ **ui/flib → /api/… → middleware → route → service →
 | `vercel.json` | 36 | 0 | 0.6 |  |  |
 | `package.json` | 11 | 0 | 0.3 |  |  |
 
-## 3. API Request (method + path) theo router (213)
+## 3. API Request (method + path) theo router (224)
 
 ### `/api/auth` — `Backend/src/routes/auth.routes.js`
 
@@ -327,17 +328,28 @@ Request đi từ **ui/flib → /api/… → middleware → route → service →
 - `POST /api/services/office/generate-pptx`
 - `POST /api/services/office/process-pdf`
 - `POST /api/services/transcribe`
+- `POST /api/services/browser/task`
+- `POST /api/services/browser/task/stop`
+- `GET /api/services/browser/task`
+- `POST /api/services/browser/vision`
 - `POST /api/services/browser/launch`
 - `POST /api/services/browser/navigate`
 - `POST /api/services/browser/click`
 - `POST /api/services/browser/type`
 - `POST /api/services/browser/key`
 - `POST /api/services/browser/scroll`
+- `GET /api/services/browser/read`
 - `POST /api/services/browser/close`
 - `GET /api/services/browser/status`
+- `GET /api/services/browser/stream-frames`
 - `GET /api/services/browser/stream-sse`
 - `GET /api/services/browser/ws-selftest`
 - `POST /api/services/browser/act`
+- `POST /api/services/browser/scroll-continuous`
+- `POST /api/services/browser/scroll-stop`
+- `POST /api/services/browser/stream-opts`
+- `POST /api/services/browser/move`
+- `POST /api/services/browser/mouse`
 - `GET /api/services/video/status`
 - `POST /api/services/video/render`
 - `POST /api/services/video/preview`
