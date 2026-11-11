@@ -48,3 +48,15 @@ Gemini · Groq · NVIDIA · Cerebras · Cohere · OpenRouter · Mistral · OpenC
    - Nếu chưa đúng hoặc phát hiện bất thường -> **TỰ ĐỘNG SỬA LẠI NGAY** (Lặp lại bước 1-3).
 4. **Cung cấp minh chứng (Proof & Evidence)**:
    - Trả lời User kèm theo bằng chứng cụ thể: Kết quả terminal build thành công, chi tiết thay đổi hoặc mô tả kết quả tự kiểm tra.
+
+---
+
+# ⛔ LUẬT GHIM CỨNG — CẤM CHẠY LOCAL, MỌI THỨ PHẢI CHẠY TRÊN CLOUD (user chốt 11/11/2026)
+
+> **BẮT BUỘC TUYỆT ĐỐI, KHÔNG NGOẠI LỆ.** Mọi thành phần của sản phẩm KHÔNG được phụ thuộc máy local của User để chạy.
+
+- **CẤM**: server/model chạy trên máy user (vd `tools/VieNeu-TTS` port 8000), **cloudflared quick tunnel** (`.trycloudflare.com`) trỏ về máy user, watchdog/tunnel-manager/daemon trên máy user, dùng `localhost`/`127.0.0.1`/quick tunnel làm backend prod.
+- **LÝ DO**: máy tắt/ngủ/mạng lag → production chết; quick tunnel đổi URL mỗi restart, không SLA (TTS vieNeu prod đã sập 11/11 vì lý do này).
+- **BẮT BUỘC**: mọi service (kể cả TTS) chạy trên cloud có SLA (Render / HuggingFace Spaces / API cloud). Engine không chạy nổi trên cloud free → chọn phương án cloud khác (HF Space, API hosted) hoặc BỎ engine đó — **TUYỆT ĐỐI KHÔNG fallback về local**.
+- Khi thêm/sửa tính năng: tự hỏi "cái này có phụ thuộc máy local không?" → nếu có thì thiết kế lại cho cloud.
+- Vi phạm = lỗi nghiêm trọng (FAIL).

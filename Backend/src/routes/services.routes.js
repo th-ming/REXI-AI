@@ -452,7 +452,9 @@ async function getEdgeVoices(langFilter) {
 // Engine OpenAI-compatible tự host (máy local có model): VIENEU_BASE_URL trỏ tới
 // `python -m apps.openai_speech` (port 8000). 25 preset giọng Việt 48kHz + cloning.
 // Không cấu hình env → app tự dùng edge-tts như cũ. Render free không chạy nổi model.
-const VIENEU_BASE_URL = (process.env.VIENEU_BASE_URL || '').trim().replace(/\/$/, '');
+// Nguồn ưu tiên: VIENEU_BASE_URL_CLOUD (GH Actions runner cloud ghi) → authoritative.
+// VIENEU_BASE_URL chỉ là fallback (vd tunnel local manager ghi) để không phá khi cloud hụt.
+const VIENEU_BASE_URL = ((process.env.VIENEU_BASE_URL_CLOUD || process.env.VIENEU_BASE_URL) || '').trim().replace(/\/$/, '');
 const VIENEU_API_KEY = (process.env.VIENEU_API_KEY || 'not-needed').trim();
 const VIENEU_TIMEOUT_MS = Number(process.env.VIENEU_TIMEOUT_MS || 120000);
 
