@@ -848,6 +848,17 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
         });
       }
       console.warn('[TTS] VieNeu failed, falling back to Edge TTS:', vnErr.message);
+      // Fallback AuK (HF cloud, ZeroGPU) khi Vieneu chet va co token — truoc Edge
+      if (AUK_HF_TOKEN && !forceVieNeu) {
+        try {
+          const aukPreset = AUK_VOICE_PRESETS.find(p => p.id === String(voiceInput || '').toLowerCase()) || AUK_VOICE_PRESETS[0];
+          const instruction = 'Say the following with ' + aukPreset.desc + ': ' + trimmedText;
+          const aukBuf = await aukGenerate(instruction, { variant: 'AuK-Flash ✨', nfe: 4, cfg: 0 });
+          return res.json({ success: true, audio: aukBuf.toString('base64'), format: 'wav', engine: 'auk-fallback', voice: aukPreset.id, voice_label: aukPreset.label, text_length: trimmedText.length });
+        } catch (aukFbErr) {
+          console.warn('[TTS] AuK fallback failed, going Edge:', aukFbErr.message);
+        }
+      }
     }
   }
 
