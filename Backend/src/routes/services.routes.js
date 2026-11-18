@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
@@ -22,17 +22,17 @@ const { PDFParse } = require('pdf-parse');
 const ragService = require('../services/ragService');
 const videoRenderer = require('../services/videoRenderer');
 
-// QA 18/9: táº¡o áº£nh qua OpenRouter (models image-output:free) â€” chen giá»¯a Gemini vÃ 
-// provider miá»…n phÃ­ trong chain cá»§a /generate-image. Tráº£ { success, image, provider }.
+// QA 18/9: tạo ảnh qua OpenRouter (models image-output:free) — chen giữa Gemini và
+// provider miễn phí trong chain của /generate-image. Trả { success, image, provider }.
 async function generateImageOpenRouter(prompt) {
   try {
     const keyRows = await new Promise((resolve) => {
       db.all("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = 'openrouter' AND gia_tri_khoa IS NOT NULL AND TRIM(gia_tri_khoa) <> ''", [], (e, rows) => resolve(rows || []));
     });
-    if (!keyRows.length) return { success: false, error: 'KhÃ´ng cÃ³ key OpenRouter trong DB' };
+    if (!keyRows.length) return { success: false, error: 'Không có key OpenRouter trong DB' };
     let orKey = '';
     try { orKey = decryptKey(keyRows[0].gia_tri_khoa).trim(); } catch (e) { orKey = ''; }
-    if (!orKey) return { success: false, error: 'Giáº£i mÃ£ key OpenRouter tháº¥t báº¡i' };
+    if (!orKey) return { success: false, error: 'Giải mã key OpenRouter thất bại' };
     const MODELS = ['google/gemini-2.5-flash-image-preview:free', 'qwen/qwen-2.5-vl-72b-instruct:free'];
     let lastErr = '';
     for (const model of MODELS) {
@@ -52,16 +52,16 @@ async function generateImageOpenRouter(prompt) {
         if (b64 && /^data:image\//.test(b64)) {
           return { success: true, image: b64, mimeType: b64.slice(5, b64.indexOf(';')), provider: 'openrouter' };
         }
-        lastErr = `${model} khÃ´ng tráº£ áº£nh${typeof msg.content === 'string' ? ' (tráº£ text)' : ''}`;
+        lastErr = `${model} không trả ảnh${typeof msg.content === 'string' ? ' (trả text)' : ''}`;
       } catch (e) { lastErr = e.message; }
     }
-    return { success: false, error: lastErr || 'OpenRouter khÃ´ng tráº£ áº£nh' };
+    return { success: false, error: lastErr || 'OpenRouter không trả ảnh' };
   } catch (e) {
     return { success: false, error: e.message };
   }
 }
 
-// Multer: LÆ°u file audio táº¡m thá»i vÃ o thÆ° má»¥c temp
+// Multer: Lưu file audio tạm thời vào thư mục temp
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, path.join(__dirname, '..', '..', 'temp')),
@@ -70,27 +70,27 @@ const upload = multer({
       cb(null, `caption_${Date.now()}${ext}`);
     }
   }),
-  limits: { fileSize: 25 * 1024 * 1024 }, // P2-20(5): 50MB â†’ 25MB max (multer nÃ y chá»‰ dÃ¹ng cho /transcribe)
+  limits: { fileSize: 25 * 1024 * 1024 }, // P2-20(5): 50MB → 25MB max (multer này chỉ dùng cho /transcribe)
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['audio/webm', 'audio/mp3', 'audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/x-wav', 'audio/x-m4a'];
-    // P2-audit: nhiá»u client (curl, upload tá»« app láº¡) gá»­i file audio vá»›i Content-Type
-    // application/octet-stream â†’ bá»‹ cháº·n á»Ÿ Ä‘Ã¢y trÆ°á»›c khi handler ká»‹p sniff theo Ä‘uÃ´i file.
-    // Cháº¥p nháº­n octet-stream khi ÄUÃ”I file lÃ  audio â€” handler sáº½ map mimetype theo Ä‘uÃ´i.
+    // P2-audit: nhiều client (curl, upload từ app lạ) gửi file audio với Content-Type
+    // application/octet-stream → bị chặn ở đây trước khi handler kịp sniff theo đuôi file.
+    // Chấp nhận octet-stream khi ĐUÔI file là audio — handler sẽ map mimetype theo đuôi.
     const AUDIO_EXT = ['.wav', '.mp3', '.webm', '.m4a', '.mp4', '.ogg', '.opus', '.oga', '.flac', '.amr', '.aac'];
     if (allowedTypes.includes(file.mimetype)
       || file.mimetype.startsWith('audio/')
       || (file.mimetype === 'application/octet-stream' && AUDIO_EXT.includes(path.extname(file.originalname || '').toLowerCase()))) {
       cb(null, true);
     } else {
-      cb(new Error('Chá»‰ cháº¥p nháº­n file audio (mp3, wav, webm, m4a, ogg, mp4)'), false);
+      cb(new Error('Chỉ chấp nhận file audio (mp3, wav, webm, m4a, ogg, mp4)'), false);
     }
   }
 });
 
-// Khá»Ÿi táº¡o Groq client
-// NOTE FOR AI AGENTS & DEVELOPERS: API Key cá»§a Groq Ä‘Æ°á»£c lÆ°u trá»¯ trá»±c tiáº¿p trong CÆ¡ sá»Ÿ dá»¯ liá»‡u SQLite
-// á»Ÿ báº£ng `khoa_api` (cá»™t `ten_nha_cung_cap` = 'groq', Ä‘Ã£ mÃ£ hÃ³a). HÃ m getGroqClient() sáº½ Æ°u tiÃªn láº¥y tá»« DB
-// náº¿u file .env khÃ´ng cÃ³ `GROQ_API_KEY`. VÃ¬ váº­y key Ä‘Ã£ sáºµn cÃ³ trong DB mÃ  khÃ´ng cáº§n khai bÃ¡o trong .env!
+// Khởi tạo Groq client
+// NOTE FOR AI AGENTS & DEVELOPERS: API Key của Groq được lưu trữ trực tiếp trong Cơ sở dữ liệu SQLite
+// ở bảng `khoa_api` (cột `ten_nha_cung_cap` = 'groq', đã mã hóa). Hàm getGroqClient() sẽ ưu tiên lấy từ DB
+// nếu file .env không có `GROQ_API_KEY`. Vì vậy key đã sẵn có trong DB mà không cần khai báo trong .env!
 const getGroqClient = async () => {
   let key = process.env.GROQ_API_KEY;
   if (!key || key === 'YOUR_GROQ_API_KEY_HERE') {
@@ -105,16 +105,16 @@ const getGroqClient = async () => {
   return new Groq({ apiKey: key });
 };
 
-// P2-20(5): bá»c promise thÃªm timeout (Groq SDK khÃ´ng pháº£i lÃºc nÃ o cÅ©ng nháº­n AbortSignal)
+// P2-20(5): bọc promise thêm timeout (Groq SDK không phải lúc nào cũng nhận AbortSignal)
 function withTimeout(promise, ms, label) {
   return Promise.race([
     promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error((label || 'YÃªu cáº§u') + ` quÃ¡ thá»i gian (${Math.round(ms / 1000)}s). Vui lÃ²ng thá»­ láº¡i vá»›i file ngáº¯n hÆ¡n.`)), ms)),
+    new Promise((_, rej) => setTimeout(() => rej(new Error((label || 'Yêu cầu') + ` quá thời gian (${Math.round(ms / 1000)}s). Vui lòng thử lại với file ngắn hơn.`)), ms)),
   ]);
 }
 
-// Khá»Ÿi táº¡o Gemini client (key tá»« DB â€” báº£ng khoa_api, ten_nha_cung_cap = 'gemini')
-// DÃ¹ng lÃ m FALLBACK khi Groq háº¿t quota/lá»—i â€” Ä‘áº£m báº£o TÃ³m táº¯t AI luÃ´n hoáº¡t Ä‘á»™ng.
+// Khởi tạo Gemini client (key từ DB — bảng khoa_api, ten_nha_cung_cap = 'gemini')
+// Dùng làm FALLBACK khi Groq hết quota/lỗi — đảm bảo Tóm tắt AI luôn hoạt động.
 const getGeminiClient = async () => {
   let key = process.env.GEMINI_API_KEY;
   if (!key || key === 'YOUR_GEMINI_API_KEY_HERE') {
@@ -129,9 +129,9 @@ const getGeminiClient = async () => {
   return new GoogleGenerativeAI(key);
 };
 
-// Dá»‹ch báº¥t ká»³ ngÃ´n ngá»¯ â†’ tiáº¿ng Viá»‡t.
-// Google Translate free bá»‹ CHáº¶N tá»« IP datacenter (Render tráº£ HTML consent) â†’ fallback
-// LLM dÃ¹ng key sáºµn trong khoa_api (Groq â†’ Gemini). Náº¿u vÄƒn báº£n Ä‘Ã£ lÃ  tiáº¿ng Viá»‡t thÃ¬ tráº£ y nguyÃªn.
+// Dịch bất kỳ ngôn ngữ → tiếng Việt.
+// Google Translate free bị CHẶN từ IP datacenter (Render trả HTML consent) → fallback
+// LLM dùng key sẵn trong khoa_api (Groq → Gemini). Nếu văn bản đã là tiếng Việt thì trả y nguyên.
 async function translateToVietnamese(text, srcLang = 'auto') {
   const t = String(text || '').trim();
   if (!t) return '';
@@ -146,8 +146,8 @@ async function translateToVietnamese(text, srcLang = 'auto') {
       const out = (data[0] || []).map(s => (s && s[0]) || '').join('').trim();
       if (out) return out;
     }
-  } catch (e) { /* Google cháº·n/khÃ´ng JSON â†’ rÆ¡i xuá»‘ng LLM */ }
-  const prompt = `Dá»‹ch Ä‘oáº¡n vÄƒn báº£n sau sang tiáº¿ng Viá»‡t tá»± nhiÃªn, giá»¯ nguyÃªn Ã½ nghÄ©a. Náº¿u vÄƒn báº£n ÄÃƒ LÃ€ tiáº¿ng Viá»‡t thÃ¬ tráº£ láº¡i y nguyÃªn. CHá»ˆ tráº£ vá» báº£n dá»‹ch, khÃ´ng giáº£i thÃ­ch, khÃ´ng thÃªm báº¥t ká»³ chá»¯ nÃ o khÃ¡c:\n\n${t}`;
+  } catch (e) { /* Google chặn/không JSON → rơi xuống LLM */ }
+  const prompt = `Dịch đoạn văn bản sau sang tiếng Việt tự nhiên, giữ nguyên ý nghĩa. Nếu văn bản ĐÃ LÀ tiếng Việt thì trả lại y nguyên. CHỈ trả về bản dịch, không giải thích, không thêm bất kỳ chữ nào khác:\n\n${t}`;
   try {
     const groq = await getGroqClient();
     if (groq) {
@@ -155,7 +155,7 @@ async function translateToVietnamese(text, srcLang = 'auto') {
       const r = await withTimeout(groq.chat.completions.create({
         model, temperature: 0.2, max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }],
-      }), 60000, 'Dá»‹ch');
+      }), 60000, 'Dịch');
       const out = String((r && r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content) || '').trim();
       if (out) return out;
     }
@@ -164,7 +164,7 @@ async function translateToVietnamese(text, srcLang = 'auto') {
     const genAI = await getGeminiClient();
     if (genAI) {
       const model = genAI.getGenerativeModel({ model: process.env.GEMINI_TRANSLATE_MODEL || 'gemini-2.5-flash' });
-      const r = await withTimeout(model.generateContent(prompt), 60000, 'Dá»‹ch');
+      const r = await withTimeout(model.generateContent(prompt), 60000, 'Dịch');
       const out = String((r && r.response && r.response.text && r.response.text()) || '').trim();
       if (out) return out;
     }
@@ -177,22 +177,22 @@ const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table
 const PptxGenJS = require('pptxgenjs');
 const { PDFDocument } = require('pdf-lib');
 
-// â”€â”€â”€ P1-09: kiá»ƒm tra chá»§ sá»Ÿ há»¯u cuá»™c há»™i thoáº¡i (admin bypass) â”€â”€â”€
-// Tráº£ null náº¿u Ä‘Æ°á»£c phÃ©p; tráº£ { status, error } náº¿u bá»‹ cháº·n (404/403/500).
+// ─── P1-09: kiểm tra chủ sở hữu cuộc hội thoại (admin bypass) ───
+// Trả null nếu được phép; trả { status, error } nếu bị chặn (404/403/500).
 function assertConvOwner(maHoiThoai, req) {
   return new Promise((resolve) => {
     if (req.user && (req.user.role === 'admin' || req.user.phan_quyen === 'admin')) return resolve(null);
     const expectedOwner = req.user ? req.user.id : GUEST_USER_ID;
     db.get("SELECT ma_nguoi_dung FROM cuoc_hoi_thoai WHERE ma_hoi_thoai = ? AND ngay_xoa IS NULL", [maHoiThoai], (err, row) => {
       if (err) return resolve({ status: 500, error: err.message });
-      if (!row) return resolve({ status: 404, error: 'KhÃ´ng tÃ¬m tháº¥y cuá»™c há»™i thoáº¡i.' });
-      if (row.ma_nguoi_dung !== expectedOwner) return resolve({ status: 403, error: 'KhÃ´ng cÃ³ quyá»n truy cáº­p cuá»™c há»™i thoáº¡i nÃ y.' });
+      if (!row) return resolve({ status: 404, error: 'Không tìm thấy cuộc hội thoại.' });
+      if (row.ma_nguoi_dung !== expectedOwner) return resolve({ status: 403, error: 'Không có quyền truy cập cuộc hội thoại này.' });
       resolve(null);
     });
   });
 }
 
-// Skills API â€” Láº¥y skills Ä‘ang kÃ­ch hoáº¡t (public dÃ nh cho chat)
+// Skills API — Lấy skills đang kích hoạt (public dành cho chat)
 router.get('/skills', authMiddleware, (req, res) => {
   db.all("SELECT * FROM ky_nang WHERE trang_thai = 'kich_hoat'", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -200,7 +200,7 @@ router.get('/skills', authMiddleware, (req, res) => {
   });
 });
 
-// Skills API â€” Láº¥y Táº¤T Cáº¢ skills (ká»ƒ cáº£ bá»‹ táº¯t) â€” dÃ nh cho Admin quáº£n lÃ½
+// Skills API — Lấy TẤT CẢ skills (kể cả bị tắt) — dành cho Admin quản lý
 router.get('/skills/all', authMiddleware, (req, res) => {
   db.all("SELECT * FROM ky_nang ORDER BY trang_thai DESC, ten_ky_nang ASC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -208,27 +208,27 @@ router.get('/skills/all', authMiddleware, (req, res) => {
   });
 });
 
-// Skills API â€” Toggle báº­t/táº¯t má»™t skill (Admin only)
+// Skills API — Toggle bật/tắt một skill (Admin only)
 router.put('/skills/:id/toggle', [authMiddleware, adminMiddleware], (req, res) => {
   const { id } = req.params;
   const { trang_thai } = req.body;
   if (!trang_thai || !['kich_hoat', 'vo_hieu'].includes(trang_thai)) {
-    return res.status(400).json({ success: false, error: 'trang_thai pháº£i lÃ  "kich_hoat" hoáº·c "vo_hieu"' });
+    return res.status(400).json({ success: false, error: 'trang_thai phải là "kich_hoat" hoặc "vo_hieu"' });
   }
   db.run('UPDATE ky_nang SET trang_thai = ? WHERE ma_ky_nang = ?', [trang_thai, id], function(err) {
     if (err) return res.status(500).json({ success: false, error: err.message });
-    if (this.changes === 0) return res.status(404).json({ success: false, error: 'KhÃ´ng tÃ¬m tháº¥y ká»¹ nÄƒng' });
-    // P1-13: ghi nháº­t kÃ½ ai toggle skill nÃ o
+    if (this.changes === 0) return res.status(404).json({ success: false, error: 'Không tìm thấy kỹ năng' });
+    // P1-13: ghi nhật ký ai toggle skill nào
     logActivity(req.user && req.user.id, 'toggle_skill', `${id} -> ${trang_thai}`);
-    res.json({ success: true, message: `ÄÃ£ ${trang_thai === 'kich_hoat' ? 'báº­t' : 'táº¯t'} ká»¹ nÄƒng`, trang_thai });
+    res.json({ success: true, message: `Đã ${trang_thai === 'kich_hoat' ? 'bật' : 'tắt'} kỹ năng`, trang_thai });
   });
 });
 
-// Live Desktop API - Cho má»i user Ä‘Ã£ Ä‘Äƒng nháº­p (Tá»I Æ¯U HIá»†U NÄ‚NG)
-// Live Desktop API - Cho má»i user Ä‘Ã£ Ä‘Äƒng nháº­p (Tá»I Æ¯U HIá»†U NÄ‚NG)
+// Live Desktop API - Cho mọi user đã đăng nhập (TỐI ƯU HIỆU NĂNG)
+// Live Desktop API - Cho mọi user đã đăng nhập (TỐI ƯU HIỆU NĂNG)
 const DESKTOP_ONLY_LOCAL = (res) => {
   if (process.platform !== 'win32') {
-    res.status(501).json({ success: false, error: 'Remote Desktop chá»‰ kháº£ dá»¥ng khi backend cháº¡y trÃªn Windows local â€” trÃªn server web tÃ­nh nÄƒng nÃ y táº¯t.' });
+    res.status(501).json({ success: false, error: 'Remote Desktop chỉ khả dụng khi backend chạy trên Windows local — trên server web tính năng này tắt.' });
     return true;
   }
   return false;
@@ -283,7 +283,7 @@ $ms.Dispose()
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': imgBuffer.length });
     res.end(imgBuffer);
   } catch (error) {
-    res.status(500).json({ error: 'Lá»—i chá»¥p mÃ n hÃ¬nh: ' + error.message });
+    res.status(500).json({ error: 'Lỗi chụp màn hình: ' + error.message });
   }
 });
 
@@ -291,15 +291,15 @@ router.post('/desktop/click', [authMiddleware, adminMiddleware], (req, res) => {
   if (DESKTOP_ONLY_LOCAL(res)) return;
   const { x_percent, y_percent } = req.body;
   
-  // VALIDATE LINH HOáº T: cháº¥p nháº­n cáº£ sá»‘ vÃ  string number, cháº·n string chá»¯
+  // VALIDATE LINH HOẠT: chấp nhận cả số và string number, chặn string chữ
   const x = Number(x_percent);
   const y = Number(y_percent);
   
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return res.status(400).json({ error: 'x_percent vÃ  y_percent pháº£i lÃ  sá»‘ (vÃ­ dá»¥: 0.5)' });
+    return res.status(400).json({ error: 'x_percent và y_percent phải là số (ví dụ: 0.5)' });
   }
   if (x < 0 || x > 1 || y < 0 || y > 1) {
-    return res.status(400).json({ error: 'GiÃ¡ trá»‹ percent pháº£i tá»« 0.0 Ä‘áº¿n 1.0' });
+    return res.status(400).json({ error: 'Giá trị percent phải từ 0.0 đến 1.0' });
   }
   
   const psClick = `
@@ -316,7 +316,7 @@ router.post('/desktop/click', [authMiddleware, adminMiddleware], (req, res) => {
 
   exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psClick.replace(/\n/g, ' ')}"`, { timeout: 3000 }, (err) => {
     if (err) {
-      return res.status(500).json({ error: 'KhÃ´ng thá»ƒ Ä‘iá»u khiá»ƒn chuá»™t: ' + err.message });
+      return res.status(500).json({ error: 'Không thể điều khiển chuột: ' + err.message });
     }
     res.json({ success: true, x_percent, y_percent });
   });
@@ -350,7 +350,7 @@ router.get('/external/weather', authMiddleware, async (req, res) => {
   } catch (err) {
     res.json({
       success: false,
-      error: 'KhÃ´ng thá»ƒ láº¥y dá»¯ liá»‡u thá»i tiáº¿t: ' + err.message,
+      error: 'Không thể lấy dữ liệu thời tiết: ' + err.message,
       source: 'error'
     });
   }
@@ -375,7 +375,7 @@ router.get('/external/stocks/:symbol', authMiddleware, async (req, res) => {
     const prices = quote.close.filter(p => p !== null);
     
     if (prices.length < 2) {
-      return res.json({ success: true, symbol: symbol.toUpperCase(), currentPrice: prices[0]?.toFixed(2) || 'N/A', change: '0', changePercent: '0', prices, recommendation: 'FLAT âž¡ï¸', source: 'Yahoo Finance' });
+      return res.json({ success: true, symbol: symbol.toUpperCase(), currentPrice: prices[0]?.toFixed(2) || 'N/A', change: '0', changePercent: '0', prices, recommendation: 'FLAT ➡️', source: 'Yahoo Finance' });
     }
     
     const currentPrice = prices[prices.length - 1];
@@ -390,27 +390,27 @@ router.get('/external/stocks/:symbol', authMiddleware, async (req, res) => {
       change: change.toFixed(2),
       changePercent: changePercent,
       prices: prices.slice(-15),
-      recommendation: currentPrice > prevPrice ? 'UP ðŸ“ˆ' : (currentPrice < prevPrice ? 'DOWN ðŸ“‰' : 'FLAT âž¡ï¸'),
+      recommendation: currentPrice > prevPrice ? 'UP 📈' : (currentPrice < prevPrice ? 'DOWN 📉' : 'FLAT ➡️'),
       source: 'Yahoo Finance'
     });
   } catch (err) {
     res.json({
       success: false,
-      error: 'KhÃ´ng thá»ƒ láº¥y dá»¯ liá»‡u chá»©ng khoÃ¡n: ' + err.message,
+      error: 'Không thể lấy dữ liệu chứng khoán: ' + err.message,
       symbol: symbol.toUpperCase(),
       source: 'error'
     });
   }
 });
 
-// Vietnamese TTS API - Edge TTS WebSocket thuáº§n Node (khÃ´ng cáº§n Python)
-// FIX 24/9/2026 (user bÃ¡o tÃªn giá»ng "áº£o"): danh sÃ¡ch giá»ng KHÃ”NG hardcode ná»¯a â€” láº¥y
-// Äá»˜NG tá»« voices/list tháº­t cá»§a Microsoft (xem edgeTTS.listEdgeVoices). Verify 24/9:
-// engine tráº£ ÄÃšNG 2 giá»ng vi-VN (id tháº­t): vi-VN-HoaiMyNeural (Female) vÃ 
+// Vietnamese TTS API - Edge TTS WebSocket thuần Node (không cần Python)
+// FIX 24/9/2026 (user báo tên giọng "ảo"): danh sách giọng KHÔNG hardcode nữa — lấy
+// ĐỘNG từ voices/list thật của Microsoft (xem edgeTTS.listEdgeVoices). Verify 24/9:
+// engine trả ĐÚNG 2 giọng vi-VN (id thật): vi-VN-HoaiMyNeural (Female) và
 // vi-VN-NamMinhNeural (Male), FriendlyName "Microsoft HoaiMy/NamMinh Online (Natural)".
-// KhÃ´ng bá»‹a vÃ¹ng miá»n/giá»›i tÃ­nh; label láº¥y tá»« dá»¯ liá»‡u engine.
+// Không bịa vùng miền/giới tính; label lấy từ dữ liệu engine.
 const EDGE_VOICE_FALLBACK_VI = [
-  { id: 'vi-VN-HoaiMyNeural', name: 'HoaiMy', gender: 'Ná»¯', locale: 'vi-VN', language: 'vi',
+  { id: 'vi-VN-HoaiMyNeural', name: 'HoaiMy', gender: 'Nữ', locale: 'vi-VN', language: 'vi',
     friendlyName: 'Microsoft HoaiMy Online (Natural) - Vietnamese (Vietnam)' },
   { id: 'vi-VN-NamMinhNeural', name: 'NamMinh', gender: 'Nam', locale: 'vi-VN', language: 'vi',
     friendlyName: 'Microsoft NamMinh Online (Natural) - Vietnamese (Vietnam)' },
@@ -418,11 +418,11 @@ const EDGE_VOICE_FALLBACK_VI = [
 const DEFAULT_TTS_VOICE = 'vi-VN-HoaiMyNeural';
 const isEdgeVoiceId = (v) => /^[a-z]{2,3}-[A-Z]{2}-[\w]+Neural$/.test(String(v || ''));
 
-// Chuáº©n hÃ³a 1 voice engine â†’ shape FE dÃ¹ng (id/label/gender/locale). Label láº¥y tá»«
-// dá»¯ liá»‡u THáº¬T cá»§a engine (name + giá»›i tÃ­nh + locale), khÃ´ng thÃªm thÃ´ng tin bá»‹a.
+// Chuẩn hóa 1 voice engine → shape FE dùng (id/label/gender/locale). Label lấy từ
+// dữ liệu THẬT của engine (name + giới tính + locale), không thêm thông tin bịa.
 function toVoiceEntry(v) {
   const label = v.friendlyName
-    ? `${v.name || v.id} (${v.gender || '?'}) Â· ${v.locale}`
+    ? `${v.name || v.id} (${v.gender || '?'}) · ${v.locale}`
     : (v.label || v.id);
   return {
     id: v.id,
@@ -435,7 +435,7 @@ function toVoiceEntry(v) {
   };
 }
 
-// Láº¥y danh sÃ¡ch giá»ng Edge (tháº­t náº¿u gá»i Ä‘Æ°á»£c, fallback static náº¿u máº¡ng lá»—i).
+// Lấy danh sách giọng Edge (thật nếu gọi được, fallback static nếu mạng lỗi).
 // langFilter: '' | 'vi' | 'all' | '<prefix>' (vd 'en', 'ja-JP')
 async function getEdgeVoices(langFilter) {
   const real = await listEdgeVoices();
@@ -448,27 +448,27 @@ async function getEdgeVoices(langFilter) {
   return { list, source, total: base.length };
 }
 
-// â”€â”€ VieNeu-TTS v3 Turbo (20/9/2026) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Engine OpenAI-compatible tá»± host (mÃ¡y local cÃ³ model): VIENEU_BASE_URL trá» tá»›i
-// `python -m apps.openai_speech` (port 8000). 25 preset giá»ng Viá»‡t 48kHz + cloning.
-// KhÃ´ng cáº¥u hÃ¬nh env â†’ app tá»± dÃ¹ng edge-tts nhÆ° cÅ©. Render free khÃ´ng cháº¡y ná»•i model.
-// Nguá»“n Æ°u tiÃªn: VIENEU_BASE_URL_CLOUD (GH Actions runner cloud ghi) â†’ authoritative.
-// VIENEU_BASE_URL chá»‰ lÃ  fallback (vd tunnel local manager ghi) Ä‘á»ƒ khÃ´ng phÃ¡ khi cloud há»¥t.
+// ── VieNeu-TTS v3 Turbo (20/9/2026) ─────────────────────────────────────────
+// Engine OpenAI-compatible tự host (máy local có model): VIENEU_BASE_URL trỏ tới
+// `python -m apps.openai_speech` (port 8000). 25 preset giọng Việt 48kHz + cloning.
+// Không cấu hình env → app tự dùng edge-tts như cũ. Render free không chạy nổi model.
+// Nguồn ưu tiên: VIENEU_BASE_URL_CLOUD (GH Actions runner cloud ghi) → authoritative.
+// VIENEU_BASE_URL chỉ là fallback (vd tunnel local manager ghi) để không phá khi cloud hụt.
 const VIENEU_BASE_URL = ((process.env.VIENEU_BASE_URL_CLOUD || process.env.VIENEU_BASE_URL) || '').trim().replace(/\/$/, '');
 const VIENEU_API_KEY = (process.env.VIENEU_API_KEY || 'not-needed').trim();
 const VIENEU_TIMEOUT_MS = Number(process.env.VIENEU_TIMEOUT_MS || 9000);
-// Circuit breaker: Vieneu há»ng liÃªn tiáº¿p -> bá» qua 5 phÃºt, Ä‘i tháº³ng Edge TTS (300ms)
+// Circuit breaker: Vieneu hỏng liên tiếp -> bỏ qua 5 phút, đi thẳng Edge TTS (300ms)
 let VIENEU_FAIL_UNTIL = 0;
 let VIENEU_FAIL_COUNT = 0;
 
-// Preset voices cá»§a VieNeu v3 Turbo (GET /v1/voices) â€” dÃ¹ng khi server khÃ´ng gá»i Ä‘Æ°á»£c /v1/voices
+// Preset voices của VieNeu v3 Turbo (GET /v1/voices) — dùng khi server không gọi được /v1/voices
 const VIENEU_PRESET_VOICES = [
-  'Adam bá»±a', 'TrÃºc Ly', 'Anh KhÃ´i', 'Mai Anh', 'Minh QuÃ¢n Pro', 'ThÃ¹y Dung', 'Thiá»n TÃ¢m Äá»©c',
-  'Ngá»c Huyá»n', 'Quang SÆ¡n', 'Ngá»c TrÃ¢n',
-  'Minh Äá»©c', 'Pháº¡m TuyÃªn', 'XuÃ¢n VÄ©nh', 'Thanh BÃ¬nh', 'Ngá»c Linh', 'Äoan Trang', 'Quá»³nh Anh', 'Máº¡nh DÅ©ng',
-  'ThÃ¡i SÆ¡n', 'Thá»¥c Äoan', 'Minh Triáº¿t', 'Má»¹ DuyÃªn', 'Äá»©c TrÃ­', 'Kim Thanh', 'Adam'
+  'Adam bựa', 'Trúc Ly', 'Anh Khôi', 'Mai Anh', 'Minh Quân Pro', 'Thùy Dung', 'Thiền Tâm Đức',
+  'Ngọc Huyền', 'Quang Sơn', 'Ngọc Trân',
+  'Minh Đức', 'Phạm Tuyên', 'Xuân Vĩnh', 'Thanh Bình', 'Ngọc Linh', 'Đoan Trang', 'Quỳnh Anh', 'Mạnh Dũng',
+  'Thái Sơn', 'Thục Đoan', 'Minh Triết', 'Mỹ Duyên', 'Đức Trí', 'Kim Thanh', 'Adam'
 ];
-const VIENEU_DEFAULT_VOICE = 'Minh QuÃ¢n Pro';
+const VIENEU_DEFAULT_VOICE = 'Minh Quân Pro';
 
 async function fetchVieNeuVoices() {
   try {
@@ -480,7 +480,7 @@ async function fetchVieNeuVoices() {
   return null;
 }
 
-// Gá»i VieNeu OpenAI-compatible POST /v1/audio/speech â†’ Buffer WAV
+// Gọi VieNeu OpenAI-compatible POST /v1/audio/speech → Buffer WAV
 async function generateVieNeuTTS(text, voice, { sampleRate } = {}) {
   const body = {
     model: 'vieneu-v3-turbo',
@@ -509,20 +509,20 @@ async function generateVieNeuTTS(text, voice, { sampleRate } = {}) {
     throw new Error(`VieNeu HTTP ${res.status}${detail ? ': ' + detail.substring(0, 200) : ''}`);
   }
   const buf = Buffer.from(await res.arrayBuffer());
-  if (!buf.length) throw new Error('VieNeu tráº£ vá» audio rá»—ng');
+  if (!buf.length) throw new Error('VieNeu trả về audio rỗng');
   return buf;
 }
 
-// Map voice Edge cÅ© (user Ä‘Ã£ lÆ°u trong localStorage) â†’ giá»ng VieNeu gáº§n tÆ°Æ¡ng Ä‘Æ°Æ¡ng
+// Map voice Edge cũ (user đã lưu trong localStorage) → giọng VieNeu gần tương đương
 const VIENEU_VOICE_ALIAS = {
-  'vi-VN-HoaiMyNeural': 'TrÃºc Ly',
-  'vi-VN-NamMinhNeural': 'Minh QuÃ¢n Pro',
+  'vi-VN-HoaiMyNeural': 'Trúc Ly',
+  'vi-VN-NamMinhNeural': 'Minh Quân Pro',
 };
 
-// â”€â”€ ahm7xmakki TTS (provider TTS free, khÃ´ng cáº§n key â€” CHá»ˆ dÃ¹ng lÃ m chá»‘t cháº·n
-//    cuá»‘i khi Edge TTS/VieNeu Ä‘á»u lá»—i) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// QA 28/9: POST https://ahm7xmakki.com/api/tts {text, voiceIndex} â†’ audio/mpeg (MP3).
-// /api/voices tráº£ 583 giá»ng; giá»ng Viá»‡t: index 314 HoaiMy (Ná»¯), 315 NamMinh (Nam).
+// ── ahm7xmakki TTS (provider TTS free, không cần key — CHỈ dùng làm chốt chặn
+//    cuối khi Edge TTS/VieNeu đều lỗi) ──────────────────────────────────────
+// QA 28/9: POST https://ahm7xmakki.com/api/tts {text, voiceIndex} → audio/mpeg (MP3).
+// /api/voices trả 583 giọng; giọng Việt: index 314 HoaiMy (Nữ), 315 NamMinh (Nam).
 const AHM_TTS_VOICE_INDEX = { 'vi-VN-HoaiMyNeural': 314, 'vi-VN-NamMinhNeural': 315 };
 const AHM_TTS_DEFAULT_INDEX = 314;
 async function generateAhmTTS(text, voiceIndex) {
@@ -537,32 +537,32 @@ async function generateAhmTTS(text, voiceIndex) {
     throw new Error(`ahm HTTP ${r.status}${detail ? ': ' + detail.substring(0, 120) : ''}`);
   }
   const buf = Buffer.from(await r.arrayBuffer());
-  if (!buf.length) throw new Error('ahm tráº£ vá» audio rá»—ng');
+  if (!buf.length) throw new Error('ahm trả về audio rỗng');
   return buf;
 }
 
-// â”€â”€ AuK (Tencent-Hunyuan) â€” 1.5B foundation model speech generation/editing â”€â”€
-// Research 1/10/2026 (repo Tencent-Hunyuan/AuK, MIT weights â€” nhÆ°ng encoder
+// ── AuK (Tencent-Hunyuan) — 1.5B foundation model speech generation/editing ──
+// Research 1/10/2026 (repo Tencent-Hunyuan/AuK, MIT weights — nhưng encoder
 // Qwen2.5-Omni-3B theo Qwen Research License = non-commercial; paper train
-// bilingual EN+ZH, tiáº¿ng Viá»‡t KHÃ”NG Ä‘Æ°á»£c Ä‘áº£m báº£o). Gá»i qua Hugging Face Space
-// gradio_api (ZeroGPU); anonymous bá»‹ space tá»« chá»‘i (event error null â€” verified
-// 1/10) nÃªn Báº®T BUá»˜C cáº¥u hÃ¬nh AUK_HF_TOKEN. Instruct TTS: mÃ´ táº£ giá»ng, khÃ´ng
-// cáº§n audio tham chiáº¿u.
+// bilingual EN+ZH, tiếng Việt KHÔNG được đảm bảo). Gọi qua Hugging Face Space
+// gradio_api (ZeroGPU); anonymous bị space từ chối (event error null — verified
+// 1/10) nên BẮT BUỘC cấu hình AUK_HF_TOKEN. Instruct TTS: mô tả giọng, không
+// cần audio tham chiếu.
 const AUK_SPACE_BASE = (process.env.AUK_SPACE_BASE || 'https://tencent-auk.hf.space').trim().replace(/\/$/, '');
 const AUK_HF_TOKEN = (process.env.AUK_HF_TOKEN || '').trim();
 const AUK_TIMEOUT_MS = Number(process.env.AUK_TIMEOUT_MS || 180000);
 
-// "Giá»ng" cá»§a AuK = mÃ´ táº£ giá»ng tá»± nhiÃªn (Instruct TTS). desc giá»¯ tiáº¿ng Anh vÃ¬
-// model tá»‘i Æ°u EN/ZH â€” mÃ´ táº£ tiáº¿ng Viá»‡t cÃ³ thá»ƒ bá»‹ hiá»ƒu sai.
+// "Giọng" của AuK = mô tả giọng tự nhiên (Instruct TTS). desc giữ tiếng Anh vì
+// model tối ưu EN/ZH — mô tả tiếng Việt có thể bị hiểu sai.
 const AUK_VOICE_PRESETS = [
-  { id: 'nu-am-diu', label: 'Ná»¯ áº¥m dá»‹u (warm female)', desc: 'a warm, gentle female voice, calm and clear' },
-  { id: 'nam-tram', label: 'Nam tráº§m chá»¯ng (deep male)', desc: 'a deep, confident male voice, professional and steady' },
-  { id: 'nu-tre-vui', label: 'Ná»¯ tráº» vui (cheerful female)', desc: 'a cheerful young female voice, energetic and bright' },
-  { id: 'nam-ke-chuyen', label: 'Nam ká»ƒ chuyá»‡n (storyteller)', desc: 'a calm elderly male storyteller voice, warm and expressive' },
-  { id: 'nu-thi-tham', label: 'Ná»¯ thÃ¬ tháº§m (whisper)', desc: 'a soft whispering female voice, intimate and quiet' },
+  { id: 'nu-am-diu', label: 'Nữ ấm dịu (warm female)', desc: 'a warm, gentle female voice, calm and clear' },
+  { id: 'nam-tram', label: 'Nam trầm chững (deep male)', desc: 'a deep, confident male voice, professional and steady' },
+  { id: 'nu-tre-vui', label: 'Nữ trẻ vui (cheerful female)', desc: 'a cheerful young female voice, energetic and bright' },
+  { id: 'nam-ke-chuyen', label: 'Nam kể chuyện (storyteller)', desc: 'a calm elderly male storyteller voice, warm and expressive' },
+  { id: 'nu-thi-tham', label: 'Nữ thì thầm (whisper)', desc: 'a soft whispering female voice, intimate and quiet' },
 ];
 
-// Gá»i HF Space gradio_api: enqueue â†’ poll SSE â†’ táº£i file audio â†’ Buffer.
+// Gọi HF Space gradio_api: enqueue → poll SSE → tải file audio → Buffer.
 async function aukGenerate(instruction, { variant = 'AuK (Base)', genSeconds = 0, nfe = 32, cfg = 2, seed = 42 } = {}) {
   if (!AUK_HF_TOKEN) {
     const e = new Error('thieu AUK_HF_TOKEN');
@@ -582,8 +582,8 @@ async function aukGenerate(instruction, { variant = 'AuK (Base)', genSeconds = 0
   });
   if (!callRes.ok) throw new Error(`enqueue HTTP ${callRes.status}`);
   const { event_id } = await callRes.json();
-  if (!event_id) throw new Error('khÃ´ng nháº­n Ä‘Æ°á»£c event_id');
-  // 2. poll SSE (ZeroGPU queue cÃ³ thá»ƒ chá» lÃ¢u â†’ timeout rá»™ng)
+  if (!event_id) throw new Error('không nhận được event_id');
+  // 2. poll SSE (ZeroGPU queue có thể chờ lâu → timeout rộng)
   const pollRes = await fetch(`${AUK_SPACE_BASE}/gradio_api/call/run_generate_with_pe/${event_id}`, {
     headers: { ...auth, Accept: 'text/event-stream' },
     signal: AbortSignal.timeout(AUK_TIMEOUT_MS),
@@ -596,13 +596,13 @@ async function aukGenerate(instruction, { variant = 'AuK (Base)', genSeconds = 0
     const ev = (lines.find(l => l.startsWith('event:')) || '').replace('event:', '').trim();
     const dv = (lines.find(l => l.startsWith('data:')) || '').replace('data:', '').trim();
     if (ev === 'error') {
-      throw new Error(`space bÃ¡o lá»—i${dv && dv !== '{"error": null}' ? ': ' + dv.substring(0, 160) : ' (kiá»ƒm tra token/quota ZeroGPU)'}`);
+      throw new Error(`space báo lỗi${dv && dv !== '{"error": null}' ? ': ' + dv.substring(0, 160) : ' (kiểm tra token/quota ZeroGPU)'}`);
     }
     if (ev === 'complete') completeData = dv;
   }
-  if (!completeData) throw new Error('khÃ´ng cÃ³ event complete');
+  if (!completeData) throw new Error('không có event complete');
   const out = JSON.parse(completeData);
-  // 3. tÃ¬m FileData audio trong máº£ng output (shape cÃ³ thá»ƒ Ä‘á»•i theo space â†’ dÃ² phÃ²ng thá»§)
+  // 3. tìm FileData audio trong mảng output (shape có thể đổi theo space → dò phòng thủ)
   const isFile = (o) => o && typeof o === 'object' && !Array.isArray(o)
     && (typeof o.url === 'string' || (typeof o.path === 'string' && /\.(wav|mp3|flac|ogg|m4a)$/i.test(o.path)));
   let file = null;
@@ -613,27 +613,27 @@ async function aukGenerate(instruction, { variant = 'AuK (Base)', genSeconds = 0
     else if (typeof o === 'object') Object.values(o).forEach(scan);
   };
   scan(out);
-  if (!file) throw new Error('khÃ´ng tÃ¬m tháº¥y file audio trong káº¿t quáº£');
+  if (!file) throw new Error('không tìm thấy file audio trong kết quả');
   const url = file.url
     ? (file.url.startsWith('http') ? file.url : AUK_SPACE_BASE + file.url)
     : `${AUK_SPACE_BASE}/gradio_api/file=${file.path}`;
-  // 4. táº£i audio
+  // 4. tải audio
   const audioRes = await fetch(url, { headers: auth, signal: AbortSignal.timeout(60000) });
-  if (!audioRes.ok) throw new Error(`táº£i audio HTTP ${audioRes.status}`);
+  if (!audioRes.ok) throw new Error(`tải audio HTTP ${audioRes.status}`);
   const buf = Buffer.from(await audioRes.arrayBuffer());
-  if (!buf.length) throw new Error('audio rá»—ng');
+  if (!buf.length) throw new Error('audio rỗng');
   return buf;
 }
 
-// GET: Láº¥y danh sÃ¡ch giá»ng nÃ³i TTS tiáº¿ng Viá»‡t
-// VieNeu active (env VIENEU_BASE_URL) â†’ tráº£ 25 preset giá»ng v3 Turbo; ngÆ°á»£c láº¡i 2 giá»ng Edge.
+// GET: Lấy danh sách giọng nói TTS tiếng Việt
+// VieNeu active (env VIENEU_BASE_URL) → trả 25 preset giọng v3 Turbo; ngược lại 2 giọng Edge.
 router.get('/tts/voices', async (req, res) => {
   const { lang, engine: engineQuery } = req.query;
-  // FE cÃ³ thá»ƒ yÃªu cáº§u rÃµ engine: ?engine=edge-tts buá»™c tráº£ danh sÃ¡ch Edge dÃ¹ Ä‘Ã£ cáº¥u hÃ¬nh VieNeu.
+  // FE có thể yêu cầu rõ engine: ?engine=edge-tts buộc trả danh sách Edge dù đã cấu hình VieNeu.
   const wantEdge = String(engineQuery || '').trim().toLowerCase() === 'edge-tts';
   const wantAuk = String(engineQuery || '').trim().toLowerCase() === 'auk';
   const wantAhm = String(engineQuery || '').trim().toLowerCase() === 'ahm';
-  // Engine ahm7xmakki â€” TTS free (khÃ´ng key), giá»ng Viá»‡t (583 giá»ng, vi: index 314/315).
+  // Engine ahm7xmakki — TTS free (không key), giọng Việt (583 giọng, vi: index 314/315).
   if (wantAhm) {
     return res.json({
       success: true,
@@ -641,14 +641,14 @@ router.get('/tts/voices', async (req, res) => {
       provider: 'ahm7xmakki (free TTS)',
       voice_clone: false,
       voices: [
-        { id: 'vi-VN-HoaiMyNeural', label: 'HoaiMy (Ná»¯) Â· ahm', engine: 'ahm', gender: 'Ná»¯' },
-        { id: 'vi-VN-NamMinhNeural', label: 'NamMinh (Nam) Â· ahm', engine: 'ahm', gender: 'Nam' },
+        { id: 'vi-VN-HoaiMyNeural', label: 'HoaiMy (Nữ) · ahm', engine: 'ahm', gender: 'Nữ' },
+        { id: 'vi-VN-NamMinhNeural', label: 'NamMinh (Nam) · ahm', engine: 'ahm', gender: 'Nam' },
       ],
       count: 2,
       default: 'vi-VN-HoaiMyNeural',
     });
   }
-  // Engine AuK (Tencent-Hunyuan 1.5B): "giá»ng" = mÃ´ táº£ giá»ng (Instruct TTS).
+  // Engine AuK (Tencent-Hunyuan 1.5B): "giọng" = mô tả giọng (Instruct TTS).
   if (wantAuk) {
     return res.json({
       success: true,
@@ -659,7 +659,7 @@ router.get('/tts/voices', async (req, res) => {
       count: AUK_VOICE_PRESETS.length,
       default: AUK_VOICE_PRESETS[0].id,
       configured: !!AUK_HF_TOKEN,
-      note: 'AuK (Tencent) tá»‘i Æ°u cho tiáº¿ng Anh/Trung â€” tiáº¿ng Viá»‡t cÃ³ thá»ƒ chÆ°a á»•n Ä‘á»‹nh.',
+      note: 'AuK (Tencent) tối ưu cho tiếng Anh/Trung — tiếng Việt có thể chưa ổn định.',
     });
   }
   if (VIENEU_BASE_URL && !wantEdge) {
@@ -680,15 +680,15 @@ router.get('/tts/voices', async (req, res) => {
     engine: 'edge-tts',
     provider: 'Microsoft Edge TTS',
     voice_clone: false,
-    source,                 // 'live' = láº¥y trá»±c tiáº¿p tá»« engine, 'fallback' = engine khÃ´ng gá»i Ä‘Æ°á»£c
+    source,                 // 'live' = lấy trực tiếp từ engine, 'fallback' = engine không gọi được
     count: list.length,
-    total,                  // tá»•ng sá»‘ giá»ng engine cÃ³ (má»i ngÃ´n ngá»¯)
+    total,                  // tổng số giọng engine có (mọi ngôn ngữ)
     voices: list,
     default: list.some(v => v.id === DEFAULT_TTS_VOICE) ? DEFAULT_TTS_VOICE : (list[0]?.id || null),
   });
 });
 
-// GET: Kiá»ƒm tra tráº¡ng thÃ¡i TTS service
+// GET: Kiểm tra trạng thái TTS service
 router.get('/tts/status', async (req, res) => {
   let real = null;
   try { real = await listEdgeVoices(); } catch { real = null; }
@@ -699,25 +699,25 @@ router.get('/tts/status', async (req, res) => {
     success: true,
     engine: VIENEU_BASE_URL ? 'vieneu' : 'edge-tts',
     provider: VIENEU_BASE_URL ? 'VieNeu (self-hosted)' : 'Microsoft Edge TTS',
-    engine_node: true,               // WebSocket thuáº§n Node â€” khÃ´ng cáº§n Python
-    voices_reachable: reachable,     // gá»i Ä‘Æ°á»£c voices/list cá»§a engine khÃ´ng?
+    engine_node: true,               // WebSocket thuần Node — không cần Python
+    voices_reachable: reachable,     // gọi được voices/list của engine không?
     total_voices: reachable ? real.length : null,
-    voices: viCount,                 // sá»‘ giá»ng vi-VN THáº¬T
-    voice_clone: !!VIENEU_BASE_URL,  // Edge TTS cÃ´ng khai KHÃ”NG clone giá»ng
+    voices: viCount,                 // số giọng vi-VN THẬT
+    voice_clone: !!VIENEU_BASE_URL,  // Edge TTS công khai KHÔNG clone giọng
     note: VIENEU_BASE_URL
-      ? 'VieNeu self-hosted: há»— trá»£ clone giá»ng.'
-      : 'Microsoft Edge TTS cÃ´ng khai â€” khÃ´ng há»— trá»£ clone giá»ng (cáº§n VIENEU_BASE_URL tá»± host).',
-    auk: { engine: 'auk', provider: 'AuK (Tencent-Hunyuan 1.5B)', configured: !!AUK_HF_TOKEN, languages: 'EN/ZH (tiáº¿ng Viá»‡t chÆ°a Ä‘áº£m báº£o)' },
+      ? 'VieNeu self-hosted: hỗ trợ clone giọng.'
+      : 'Microsoft Edge TTS công khai — không hỗ trợ clone giọng (cần VIENEU_BASE_URL tự host).',
+    auk: { engine: 'auk', provider: 'AuK (Tencent-Hunyuan 1.5B)', configured: !!AUK_HF_TOKEN, languages: 'EN/ZH (tiếng Việt chưa đảm bảo)' },
     fallback: 'Web Speech API (browser)'
   });
 });
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// Engine Edge TTS Thuáº§n Node.js â€” dÃ¹ng chung tá»« src/services/edgeTTS.js
-// (WebSocket trá»±c tiáº¿p tá»›i Microsoft Edge TTS, khÃ´ng cáº§n Python)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+// Engine Edge TTS Thuần Node.js — dùng chung từ src/services/edgeTTS.js
+// (WebSocket trực tiếp tới Microsoft Edge TTS, không cần Python)
+// ═══════════════════════════════════════════════════════════════════
 
-// Cháº¡y edge-tts Python lÃ m phÆ°Æ¡ng Ã¡n dá»± phÃ²ng
+// Chạy edge-tts Python làm phương án dự phòng
 async function runEdgeTtsPython(voiceName, trimmedText, validRate, validPitch, tempFile) {
   const { spawn } = require('child_process');
   return new Promise((resolve, reject) => {
@@ -740,38 +740,38 @@ async function runEdgeTtsPython(voiceName, trimmedText, validRate, validPitch, t
   });
 }
 
-// FREE-ALL (QA 22/9/2026): TTS free cho má»i user ká»ƒ cáº£ khÃ¡ch vÃ£ng lai (user yÃªu cáº§u)
-// â€” edge-tts/VieNeu Ä‘á»u miá»…n phÃ­ khÃ´ng tá»‘n key, chá»‰ giá»¯ rateLimit chá»‘ng abuse.
+// FREE-ALL (QA 22/9/2026): TTS free cho mọi user kể cả khách vãng lai (user yêu cầu)
+// — edge-tts/VieNeu đều miễn phí không tốn key, chỉ giữ rateLimit chống abuse.
 router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) => {
   const { text, voice, rate, pitch, engine: engineInput } = req.body;
   if (!text || !text.trim()) {
-    return res.status(400).json({ error: 'VÄƒn báº£n khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng' });
+    return res.status(400).json({ error: 'Văn bản không được để trống' });
   }
 
   const maxLength = 1000;
   const trimmedText = text.trim().substring(0, maxLength);
   const voiceInput = String(voice || '').trim();
-  // FE chá»n engine: 'vieneu' (buá»™c) | 'edge-tts' (buá»™c) | '' (máº·c Ä‘á»‹nh Æ°u tiÃªn VieNeu náº¿u cÃ³)
+  // FE chọn engine: 'vieneu' (buộc) | 'edge-tts' (buộc) | '' (mặc định ưu tiên VieNeu nếu có)
   const enginePref = String(engineInput || '').trim().toLowerCase();
   const forceEdge = enginePref === 'edge-tts';
   const forceVieNeu = enginePref === 'vieneu';
 
-  // Engine AuK (Tencent-Hunyuan 1.5B) â€” Instruct TTS qua HF Space (ZeroGPU).
-  // ChÆ°a cáº¥u hÃ¬nh token â†’ bÃ¡o rÃµ (KHÃ”NG láº·ng láº½ Ä‘á»•i sang Edge) + nháº¯c giá»›i háº¡n VN.
+  // Engine AuK (Tencent-Hunyuan 1.5B) — Instruct TTS qua HF Space (ZeroGPU).
+  // Chưa cấu hình token → báo rõ (KHÔNG lặng lẽ đổi sang Edge) + nhắc giới hạn VN.
   if (enginePref === 'auk') {
     const preset = AUK_VOICE_PRESETS.find(p => p.id === voiceInput);
     const desc = preset ? preset.desc : (voiceInput || AUK_VOICE_PRESETS[0].desc);
     const wantFlash = String(req.body.variant || '').trim().toLowerCase() === 'flash';
-    const variant = wantFlash ? 'AuK-Flash âš¡' : 'AuK (Base)';
-    // Flash khoÃ¡ NFE 4 / CFG 0 (theo UI space); Base máº·c Ä‘á»‹nh 32 / 2.
+    const variant = wantFlash ? 'AuK-Flash ⚡' : 'AuK (Base)';
+    // Flash khoá NFE 4 / CFG 0 (theo UI space); Base mặc định 32 / 2.
     const nfe = wantFlash ? 4 : (Number(req.body.nfe) || 32);
     const cfg = wantFlash ? 0 : (Number.isFinite(Number(req.body.cfg)) ? Number(req.body.cfg) : 2);
     if (!AUK_HF_TOKEN) {
       return res.status(503).json({
         success: false,
         engine: 'auk',
-        error: 'Engine AuK (Tencent) chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh: thiáº¿u AUK_HF_TOKEN.',
-        hint: 'Admin Ä‘áº·t biáº¿n mÃ´i trÆ°á»ng AUK_HF_TOKEN (token Hugging Face cÃ³ quota ZeroGPU). AuK tá»‘i Æ°u EN/ZH â€” tiáº¿ng Viá»‡t cÃ³ thá»ƒ chÆ°a á»•n Ä‘á»‹nh.',
+        error: 'Engine AuK (Tencent) chưa được cấu hình: thiếu AUK_HF_TOKEN.',
+        hint: 'Admin đặt biến môi trường AUK_HF_TOKEN (token Hugging Face có quota ZeroGPU). AuK tối ưu EN/ZH — tiếng Việt có thể chưa ổn định.',
       });
     }
     try {
@@ -785,20 +785,20 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
         voice: voiceInput,
         voice_label: preset ? preset.label : desc,
         text_length: trimmedText.length,
-        note: 'AuK (Tencent-Hunyuan 1.5B) â€” tá»‘i Æ°u tiáº¿ng Anh/Trung',
+        note: 'AuK (Tencent-Hunyuan 1.5B) — tối ưu tiếng Anh/Trung',
       });
     } catch (aukErr) {
       console.error('[TTS] AuK failed:', aukErr.message);
       return res.status(502).json({
         success: false,
         engine: 'auk',
-        error: 'AuK lá»—i: ' + aukErr.message,
-        hint: 'Kiá»ƒm tra AUK_HF_TOKEN vÃ  quota ZeroGPU cá»§a Hugging Face Space Tencent-Hunyuan/AuK.',
+        error: 'AuK lỗi: ' + aukErr.message,
+        hint: 'Kiểm tra AUK_HF_TOKEN và quota ZeroGPU của Hugging Face Space Tencent-Hunyuan/AuK.',
       });
     }
   }
 
-  // Engine ahm7xmakki â€” TTS free (khÃ´ng key) giá»ng Viá»‡t; chá»‘t cháº·n Ä‘á»™c láº­p vá»›i Edge/VieNeu.
+  // Engine ahm7xmakki — TTS free (không key) giọng Việt; chốt chặn độc lập với Edge/VieNeu.
   if (enginePref === 'ahm') {
     const idx = AHM_TTS_VOICE_INDEX[voiceInput] || AHM_TTS_DEFAULT_INDEX;
     try {
@@ -814,12 +814,12 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
       });
     } catch (ahmErr) {
       console.error('[TTS] ahm failed:', ahmErr.message);
-      return res.status(502).json({ success: false, engine: 'ahm', error: 'ahm TTS lá»—i: ' + ahmErr.message });
+      return res.status(502).json({ success: false, engine: 'ahm', error: 'ahm TTS lỗi: ' + ahmErr.message });
     }
   }
 
-  // Æ¯u tiÃªn sá»‘ 1 khi cáº¥u hÃ¬nh: VieNeu v3 Turbo (tá»± host, 48kHz) â€” voice lÃ  tÃªn preset cÃ³ dáº¥u
-  // (nháº­n cáº£ voice Edge cÅ© qua alias, cáº£ giá»ng clone Ä‘Ã£ enroll trÃªn server VieNeu)
+  // Ưu tiên số 1 khi cấu hình: VieNeu v3 Turbo (tự host, 48kHz) — voice là tên preset có dấu
+  // (nhận cả voice Edge cũ qua alias, cả giọng clone đã enroll trên server VieNeu)
   if (VIENEU_BASE_URL && !forceEdge && Date.now() >= VIENEU_FAIL_UNTIL) {
     try {
       const vnVoice = VIENEU_VOICE_ALIAS[voiceInput]
@@ -836,17 +836,17 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
         text_length: trimmedText.length
       });
     } catch (vnErr) {
-      VIENEU_FAIL_COUNT++; if (VIENEU_FAIL_COUNT >= 2) { VIENEU_FAIL_UNTIL = Date.now() + 5 * 60 * 1000; VIENEU_FAIL_COUNT = 0; console.warn('[TTS] Vieneu breaker ON 5 phut — di thang Edge'); }
-      // NgÆ°á»i dÃ¹ng chá»§ Ä‘á»™ng chá»n VieNeu â†’ bÃ¡o lá»—i tháº­t, KHÃ”NG láº·ng láº½ Ä‘á»•i sang Edge.
+      // Người dùng chủ động chọn VieNeu → báo lỗi thật, KHÔNG lặng lẽ đổi sang Edge.
       if (forceVieNeu) {
         console.error('[TTS] VieNeu (forced) failed:', vnErr.message);
         return res.status(502).json({
           success: false,
           engine: 'vieneu',
-          error: 'VieNeu táº¡m thá»i khÃ´ng pháº£n há»“i: ' + vnErr.message,
-          hint: 'Engine VieNeu cháº¡y trÃªn mÃ¡y tá»± host â€” kiá»ƒm tra server local (port 8124) vÃ  tunnel.'
+          error: 'VieNeu tạm thời không phản hồi: ' + vnErr.message,
+          hint: 'Engine VieNeu chạy trên máy tự host — kiểm tra server local (port 8124) và tunnel.'
         });
       }
+      VIENEU_FAIL_COUNT++; if (VIENEU_FAIL_COUNT >= 2) { VIENEU_FAIL_UNTIL = Date.now() + 5 * 60 * 1000; VIENEU_FAIL_COUNT = 0; console.warn('[TTS] Vieneu breaker ON 5 phut — di thang Edge'); }
       console.warn('[TTS] VieNeu failed, falling back to Edge TTS:', vnErr.message);
       // Fallback AuK (HF cloud, ZeroGPU) khi Vieneu chet va co token — truoc Edge
       if (AUK_HF_TOKEN && !forceVieNeu) {
@@ -862,17 +862,17 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
     }
   }
 
-  // Edge TTS (Microsoft) â€” validate theo danh sÃ¡ch giá»ng THáº¬T cá»§a engine (khÃ´ng hardcode).
+  // Edge TTS (Microsoft) — validate theo danh sách giọng THẬT của engine (không hardcode).
   let edgeVoices = null;
   try { edgeVoices = await listEdgeVoices(); } catch { edgeVoices = null; }
   let voiceName = voiceInput || DEFAULT_TTS_VOICE;
   if (edgeVoices) {
     const realIds = new Set(edgeVoices.map(v => v.id));
     if (!realIds.has(voiceName) && !isEdgeVoiceId(voiceName)) {
-      // KhÃ´ng bá»‹a/thay ngáº§m: bÃ¡o rÃµ giá»ng khÃ´ng tá»“n táº¡i + gá»£i Ã½ giá»ng vi tháº­t.
+      // Không bịa/thay ngầm: báo rõ giọng không tồn tại + gợi ý giọng vi thật.
       return res.status(400).json({
         success: false,
-        error: `Giá»ng "${voiceInput}" khÃ´ng tá»“n táº¡i trÃªn engine Microsoft Edge TTS.`,
+        error: `Giọng "${voiceInput}" không tồn tại trên engine Microsoft Edge TTS.`,
         available: edgeVoices.filter(v => v.language === 'vi').map(v => v.id),
       });
     }
@@ -887,12 +887,12 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
   try {
     let audioBuffer;
 
-    // Gá»i trá»±c tiáº¿p Edge TTS WebSocket thuáº§n Node.js (SiÃªu nhanh 300ms, khÃ´ng cáº§n Python)
+    // Gọi trực tiếp Edge TTS WebSocket thuần Node.js (Siêu nhanh 300ms, không cần Python)
     try {
       audioBuffer = await generateEdgeTTSNode(voiceName, trimmedText, validRate, validPitch, voiceLang);
     } catch (wsErr) {
       console.warn('[TTS] Pure Node.js WebSocket failed, trying Python fallback:', wsErr.message);
-      // Dá»± phÃ²ng: Thá»­ gá»i Python náº¿u WebSocket gáº·p sá»± cá»‘
+      // Dự phòng: Thử gọi Python nếu WebSocket gặp sự cố
       const tempFile = path.join(__dirname, '..', '..', `tts_${Date.now()}.mp3`);
       await runEdgeTtsPython(voiceName, trimmedText, validRate, validPitch, tempFile);
       if (fs.existsSync(tempFile)) {
@@ -918,14 +918,14 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
       });
     }
 
-    throw new Error('KhÃ´ng thá»ƒ táº¡o Ã¢m thanh TTS');
+    throw new Error('Không thể tạo âm thanh TTS');
   } catch (err) {
     console.error('[TTS] Error:', err.message);
-    // QA 28/9: Edge TTS + Python fallback Ä‘á»u lá»—i â†’ thá»­ provider TTS free ahm7xmakki
-    // (Ä‘Ã£ verify tráº£ MP3 tiáº¿ng Viá»‡t). KhÃ´ng thay Ä‘á»•i hÃ nh vi khi Edge cháº¡y bÃ¬nh thÆ°á»ng.
+    // QA 28/9: Edge TTS + Python fallback đều lỗi → thử provider TTS free ahm7xmakki
+    // (đã verify trả MP3 tiếng Việt). Không thay đổi hành vi khi Edge chạy bình thường.
     try {
       const ahmBuf = await generateAhmTTS(trimmedText, AHM_TTS_VOICE_INDEX[voiceName]);
-      console.warn('[TTS] Edge tháº¥t báº¡i, dÃ¹ng ahm7xmakki fallback.');
+      console.warn('[TTS] Edge thất bại, dùng ahm7xmakki fallback.');
       return res.json({
         success: true,
         audio: ahmBuf.toString('base64'),
@@ -938,35 +938,35 @@ router.post('/tts', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) =>
         text_length: trimmedText.length
       });
     } catch (ahmErr) {
-      console.error('[TTS] ahm fallback cÅ©ng lá»—i:', ahmErr.message);
+      console.error('[TTS] ahm fallback cũng lỗi:', ahmErr.message);
     }
     res.status(500).json({
       success: false,
-      error: 'Lá»—i phÃ¡t Ã¢m thanh: ' + err.message,
-      note: 'Dá»‹ch vá»¥ giá»ng nÃ³i Microsoft Edge TTS táº¡m thá»i giÃ¡n Ä‘oáº¡n.'
+      error: 'Lỗi phát âm thanh: ' + err.message,
+      note: 'Dịch vụ giọng nói Microsoft Edge TTS tạm thời gián đoạn.'
     });
   }
 });
 
-// Clone giá»ng (VieNeu): nháº­n file máº«u 3-8s + vÄƒn báº£n â†’ forward multipart tá»›i
-// {VIENEU_BASE_URL}/v1/clone â†’ tráº£ WAV base64 (cÃ¹ng Ä‘á»‹nh dáº¡ng vá»›i /services/tts).
+// Clone giọng (VieNeu): nhận file mẫu 3-8s + văn bản → forward multipart tới
+// {VIENEU_BASE_URL}/v1/clone → trả WAV base64 (cùng định dạng với /services/tts).
 const cloneUpload = multer({  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // 4/10: má»™t sá»‘ client (curl Windows, vÃ i trÃ¬nh duyá»‡t) gá»­i audio vá»›i
-    // Content-Type application/octet-stream â†’ cháº¥p nháº­n theo Ä‘uÃ´i file ná»¯a.
+    // 4/10: một số client (curl Windows, vài trình duyệt) gửi audio với
+    // Content-Type application/octet-stream → chấp nhận theo đuôi file nữa.
     const mimeOk = file.mimetype && file.mimetype.startsWith('audio/');
     const extOk = /\.(wav|mp3|m4a|ogg|oga|webm|flac|aac)$/i.test(file.originalname || '');
     if (mimeOk || extOk) cb(null, true);
-    else cb(new Error('Chá»‰ cháº¥p nháº­n file audio máº«u (wav/mp3/m4a/ogg/webm)'), false);
+    else cb(new Error('Chỉ chấp nhận file audio mẫu (wav/mp3/m4a/ogg/webm)'), false);
   }
 });
-// Bá»c single('audio') Ä‘á»ƒ lá»—i multer/busboy tráº£ JSON 400 rÃµ rÃ ng thay vÃ¬ rÆ¡i
-// vÃ o global error handler (500 mÃ¹). 4/10: debug upload flaky.
+// Bọc single('audio') để lỗi multer/busboy trả JSON 400 rõ ràng thay vì rơi
+// vào global error handler (500 mù). 4/10: debug upload flaky.
 const uploadAudioSample = (req, res, next) => {
   cloneUpload.single('audio')(req, res, (err) => {
     if (err) {
-      return res.status(400).json({ success: false, error: 'Upload lá»—i: ' + (err.message || err.code || 'unknown') });
+      return res.status(400).json({ success: false, error: 'Upload lỗi: ' + (err.message || err.code || 'unknown') });
     }
     next();
   });
@@ -977,15 +977,15 @@ router.post('/tts/clone', rateLimit({ windowMs: 60000, max: 10 }), uploadAudioSa
     if (!VIENEU_BASE_URL) {
       return res.status(503).json({
         success: false,
-        error: 'Clone giá»ng cáº§n engine VieNeu (VIENEU_BASE_URL chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh trÃªn server).'
+        error: 'Clone giọng cần engine VieNeu (VIENEU_BASE_URL chưa được cấu hình trên server).'
       });
     }
     if (!req.file || !req.file.buffer || !req.file.buffer.length) {
-      return res.status(400).json({ success: false, error: 'Thiáº¿u file audio máº«u (3-8 giÃ¢y).' });
+      return res.status(400).json({ success: false, error: 'Thiếu file audio mẫu (3-8 giây).' });
     }
     const cloneText = String(req.body?.text || '').trim().substring(0, 1000);
     if (!cloneText) {
-      return res.status(400).json({ success: false, error: 'Thiáº¿u vÄƒn báº£n cáº§n Ä‘á»c báº±ng giá»ng clone.' });
+      return res.status(400).json({ success: false, error: 'Thiếu văn bản cần đọc bằng giọng clone.' });
     }
     const refText = String(req.body?.ref_text || '').trim().substring(0, 500);
 
@@ -1011,7 +1011,7 @@ router.post('/tts/clone', rateLimit({ windowMs: 60000, max: 10 }), uploadAudioSa
     }
     const wavBuffer = Buffer.from(await upstream.arrayBuffer());
     if (!wavBuffer.length) {
-      return res.status(502).json({ success: false, engine: 'vieneu', error: 'VieNeu clone tráº£ audio rá»—ng' });
+      return res.status(502).json({ success: false, engine: 'vieneu', error: 'VieNeu clone trả audio rỗng' });
     }
     return res.json({
       success: true,
@@ -1019,20 +1019,20 @@ router.post('/tts/clone', rateLimit({ windowMs: 60000, max: 10 }), uploadAudioSa
       format: 'wav',
       engine: 'vieneu',
       voice: 'clone',
-      voice_label: 'Giá»ng Ä‘Ã£ clone',
+      voice_label: 'Giọng đã clone',
       text_length: cloneText.length
     });
   } catch (err) {
     console.error('[TTS clone] Error:', err.message);
-    return res.status(500).json({ success: false, error: 'Lá»—i clone giá»ng: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Lỗi clone giọng: ' + err.message });
   }
 });
 
-// â”€â”€â”€ Giá»ng tÃ¹y chá»‰nh cá»§a user ("Giá»ng cá»§a tÃ´i", 4/10) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// VieNeu /v1/clone lÃ  stateless (tráº£ WAV xong xÃ³a máº«u) â†’ muá»‘n TÃI DÃ™NG giá»ng
-// pháº£i lÆ°u file máº«u. LÆ°u máº«u vÃ o DB theo user (Render disk ephemeral nÃªn
-// khÃ´ng Ä‘á»ƒ file local). CÃ³ API /:id/speak Ä‘á»ƒ Ä‘á»c vÄƒn báº£n má»›i báº±ng giá»ng Ä‘Ã£
-// lÆ°u â€” dÃ¹ng trong app láº«n gá»i tá»« bÃªn ngoÃ i nhÆ° API TTS giá»ng riÃªng.
+// ─── Giọng tùy chỉnh của user ("Giọng của tôi", 4/10) ─────────────────────
+// VieNeu /v1/clone là stateless (trả WAV xong xóa mẫu) → muốn TÁI DÙNG giọng
+// phải lưu file mẫu. Lưu mẫu vào DB theo user (Render disk ephemeral nên
+// không để file local). Có API /:id/speak để đọc văn bản mới bằng giọng đã
+// lưu — dùng trong app lẫn gọi từ bên ngoài như API TTS giọng riêng.
 db.run(`CREATE TABLE IF NOT EXISTS giong_tuy_chinh (
   giong_id TEXT PRIMARY KEY,
   ma_nguoi_dung TEXT NOT NULL,
@@ -1051,18 +1051,18 @@ const dbAll = (sql, params = []) => new Promise((resolve, reject) => {
 const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
   db.run(sql, params, function (err) { err ? reject(err) : resolve(this); });
 });
-const MAX_SAMPLE_BYTES = 2 * 1024 * 1024; // máº«u 3-8s wav ~ vÃ i trÄƒm KB
+const MAX_SAMPLE_BYTES = 2 * 1024 * 1024; // mẫu 3-8s wav ~ vài trăm KB
 
-// LÆ°u máº«u giá»ng (Ä‘áº·t tÃªn) â€” cáº§n Ä‘Äƒng nháº­p
+// Lưu mẫu giọng (đặt tên) — cần đăng nhập
 router.post('/tts/custom-voices', authMiddleware, rateLimit({ windowMs: 60000, max: 10 }), uploadAudioSample, async (req, res) => {
   try {
     const name = String(req.body?.ten || req.body?.name || '').trim().substring(0, 60);
-    if (!name) return res.status(400).json({ success: false, error: 'Thiáº¿u tÃªn giá»ng (ten).' });
+    if (!name) return res.status(400).json({ success: false, error: 'Thiếu tên giọng (ten).' });
     if (!req.file || !req.file.buffer || !req.file.buffer.length) {
-      return res.status(400).json({ success: false, error: 'Thiáº¿u file audio máº«u.' });
+      return res.status(400).json({ success: false, error: 'Thiếu file audio mẫu.' });
     }
     if (req.file.buffer.length > MAX_SAMPLE_BYTES) {
-      return res.status(400).json({ success: false, error: 'File máº«u quÃ¡ lá»›n (tá»‘i Ä‘a 2MB, khoáº£ng 3-8 giÃ¢y).' });
+      return res.status(400).json({ success: false, error: 'File mẫu quá lớn (tối đa 2MB, khoảng 3-8 giây).' });
     }
     const id = require('crypto').randomUUID();
     await dbRun(
@@ -1072,11 +1072,11 @@ router.post('/tts/custom-voices', authMiddleware, rateLimit({ windowMs: 60000, m
     return res.json({ success: true, id, ten: name, dung_luong: req.file.buffer.length });
   } catch (err) {
     console.error('[TTS custom-voices] Save error:', err.message);
-    return res.status(500).json({ success: false, error: 'Lá»—i lÆ°u giá»ng: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Lỗi lưu giọng: ' + err.message });
   }
 });
 
-// Danh sÃ¡ch giá»ng cá»§a tÃ´i (khÃ´ng kÃ¨m audio)
+// Danh sách giọng của tôi (không kèm audio)
 router.get('/tts/custom-voices', authMiddleware, async (req, res) => {
   try {
     const rows = await dbAll(
@@ -1085,51 +1085,51 @@ router.get('/tts/custom-voices', authMiddleware, async (req, res) => {
     );
     return res.json({ success: true, voices: rows });
   } catch (err) {
-    return res.status(500).json({ success: false, error: 'Lá»—i táº£i danh sÃ¡ch: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Lỗi tải danh sách: ' + err.message });
   }
 });
 
-// Táº£i file máº«u vá» (Ä‘á»ƒ chÃ¨n/cháº¿ biáº¿n chá»— khÃ¡c)
+// Tải file mẫu về (để chèn/chế biến chỗ khác)
 router.get('/tts/custom-voices/:id/sample', authMiddleware, async (req, res) => {
   try {
     const row = await dbGet(
       'SELECT ten_giong, audio_mime, audio_b64 FROM giong_tuy_chinh WHERE giong_id = ? AND ma_nguoi_dung = ?',
       [req.params.id, req.user.id]
     );
-    if (!row || !row.audio_b64) return res.status(404).json({ success: false, error: 'KhÃ´ng tÃ¬m tháº¥y máº«u giá»ng.' });
+    if (!row || !row.audio_b64) return res.status(404).json({ success: false, error: 'Không tìm thấy mẫu giọng.' });
     const buf = Buffer.from(row.audio_b64, 'base64');
     const ext = String(row.audio_mime || '').includes('mp3') || String(row.audio_mime || '').includes('mpeg') ? 'mp3' : 'wav';
     res.setHeader('Content-Type', row.audio_mime || 'audio/wav');
     res.setHeader('Content-Disposition', `attachment; filename="giong-${req.params.id}.${ext}"`);
     return res.send(buf);
   } catch (err) {
-    return res.status(500).json({ success: false, error: 'Lá»—i táº£i máº«u: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Lỗi tải mẫu: ' + err.message });
   }
 });
 
-// XÃ³a giá»ng
+// Xóa giọng
 router.delete('/tts/custom-voices/:id', authMiddleware, async (req, res) => {
   try {
     await dbRun('DELETE FROM giong_tuy_chinh WHERE giong_id = ? AND ma_nguoi_dung = ?', [req.params.id, req.user.id]);
     return res.json({ success: true });
   } catch (err) {
-    return res.status(500).json({ success: false, error: 'Lá»—i xÃ³a: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Lỗi xóa: ' + err.message });
   }
 });
 
-// Äá»c vÄƒn báº£n má»›i báº±ng giá»ng Ä‘Ã£ lÆ°u â€” API tÃ¡i dÃ¹ng (trong app + gá»i ngoÃ i)
+// Đọc văn bản mới bằng giọng đã lưu — API tái dùng (trong app + gọi ngoài)
 router.post('/tts/custom-voices/:id/speak', authMiddleware, rateLimit({ windowMs: 60000, max: 30 }), async (req, res) => {
   try {
     if (!VIENEU_BASE_URL) {
-      return res.status(503).json({ success: false, error: 'Cáº§n engine VieNeu (VIENEU_BASE_URL chÆ°a cáº¥u hÃ¬nh).' });
+      return res.status(503).json({ success: false, error: 'Cần engine VieNeu (VIENEU_BASE_URL chưa cấu hình).' });
     }
     const text = String(req.body?.text || '').trim().substring(0, 1000);
-    if (!text) return res.status(400).json({ success: false, error: 'Thiáº¿u text.' });
+    if (!text) return res.status(400).json({ success: false, error: 'Thiếu text.' });
     const row = await dbGet(
       'SELECT ten_giong, audio_mime, audio_b64 FROM giong_tuy_chinh WHERE giong_id = ? AND ma_nguoi_dung = ?',
       [req.params.id, req.user.id]
     );
-    if (!row || !row.audio_b64) return res.status(404).json({ success: false, error: 'KhÃ´ng tÃ¬m tháº¥y máº«u giá»ng.' });
+    if (!row || !row.audio_b64) return res.status(404).json({ success: false, error: 'Không tìm thấy mẫu giọng.' });
     const form = new FormData();
     form.append('file', new Blob([Buffer.from(row.audio_b64, 'base64')], { type: row.audio_mime || 'audio/wav' }), 'ref.wav');
     form.append('text', text);
@@ -1143,7 +1143,7 @@ router.post('/tts/custom-voices/:id/speak', authMiddleware, rateLimit({ windowMs
       return res.status(502).json({ success: false, engine: 'vieneu', error: `VieNeu clone HTTP ${upstream.status}`, detail: detail.substring(0, 200) });
     }
     const wavBuffer = Buffer.from(await upstream.arrayBuffer());
-    if (!wavBuffer.length) return res.status(502).json({ success: false, engine: 'vieneu', error: 'VieNeu clone tráº£ audio rá»—ng' });
+    if (!wavBuffer.length) return res.status(502).json({ success: false, engine: 'vieneu', error: 'VieNeu clone trả audio rỗng' });
     return res.json({
       success: true,
       audio: wavBuffer.toString('base64'),
@@ -1154,28 +1154,28 @@ router.post('/tts/custom-voices/:id/speak', authMiddleware, rateLimit({ windowMs
     });
   } catch (err) {
     console.error('[TTS custom-voices] Speak error:', err.message);
-    return res.status(500).json({ success: false, error: 'Lá»—i Ä‘á»c: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Lỗi đọc: ' + err.message });
   }
 });
 
 const getCountryFlag = (code) => {
-  if (!code || code.length !== 2) return 'ðŸŒ';
+  if (!code || code.length !== 2) return '🌐';
   const codePoints = code.toUpperCase().split('').map(c => 127397 + c.charCodeAt(0));
   return String.fromCodePoint(...codePoints);
 };
 
 // ============================================================
-// HLS Stream Proxy â€” trÃ¡nh CORS khi trÃ¬nh duyá»‡t load stream
-// Browser gá»i: /api/services/iptv/proxy?url=<encoded_stream_url>
-// Backend fetch vá» rá»“i chuyá»ƒn tiáº¿p vá»›i CORS headers má»Ÿ
+// HLS Stream Proxy — tránh CORS khi trình duyệt load stream
+// Browser gọi: /api/services/iptv/proxy?url=<encoded_stream_url>
+// Backend fetch về rồi chuyển tiếp với CORS headers mở
 // ============================================================
-// P2-19d: proxy yÃªu cáº§u Ä‘Äƒng nháº­p. <video>/hls.js khÃ´ng gá»­i Ä‘Æ°á»£c Authorization
-// header â†’ cho phÃ©p token qua ?token= (bridge sang header cho authMiddleware).
-// FE Ä‘Ã£ gá»­i token vÃ o URL proxy (App.jsx playHlsStream, YouTubeTab proxyUrl);
-// playlist m3u8 rewrite giá»¯ láº¡i token cho cÃ¡c segment con (qsToken).
-// 4/10 FREE-ALL YouTube: khÃ¡ch vÃ£ng lai (khÃ´ng token) váº«n xem Ä‘Æ°á»£c qua
-// /youtube/proxy nhÆ°ng CHá»ˆ vá»›i host media Ä‘Ã£ biáº¿t (chá»‘ng open-proxy).
-// /iptv/proxy giá»¯ nguyÃªn: báº¯t buá»™c login.
+// P2-19d: proxy yêu cầu đăng nhập. <video>/hls.js không gửi được Authorization
+// header → cho phép token qua ?token= (bridge sang header cho authMiddleware).
+// FE đã gửi token vào URL proxy (App.jsx playHlsStream, YouTubeTab proxyUrl);
+// playlist m3u8 rewrite giữ lại token cho các segment con (qsToken).
+// 4/10 FREE-ALL YouTube: khách vãng lai (không token) vẫn xem được qua
+// /youtube/proxy nhưng CHỈ với host media đã biết (chống open-proxy).
+// /iptv/proxy giữ nguyên: bắt buộc login.
 function proxyAuth(req, res, next) {
   if (!req.headers.authorization && req.query.token) {
     req.headers.authorization = 'Bearer ' + req.query.token;
@@ -1184,10 +1184,10 @@ function proxyAuth(req, res, next) {
 }
 function youtubeProxyAuth(req, res, next) {
   if (req.headers.authorization || req.query.token) return proxyAuth(req, res, next);
-  return next(); // khÃ¡ch: handler /youtube/proxy kiá»ƒm tra host allowlist
+  return next(); // khách: handler /youtube/proxy kiểm tra host allowlist
 }
-// Guest váº«n xem IPTV Ä‘Æ°á»£c (khÃ´ng token) nhÆ°ng limit riÃªng 30 req/phÃºt/IP
-// Ä‘á»ƒ chá»‘ng láº¡m dá»¥ng bÄƒng thÃ´ng â€” SSRF check trong handler váº«n Ã¡p dá»¥ng.
+// Guest vẫn xem IPTV được (không token) nhưng limit riêng 30 req/phút/IP
+// để chống lạm dụng băng thông — SSRF check trong handler vẫn áp dụng.
 const iptvGuestRate = rateLimit({ windowMs: 60000, max: 30 });
 function iptvProxyGate(req, res, next) {
   if (req.headers.authorization || req.query.token) return proxyAuth(req, res, next);
@@ -1201,10 +1201,10 @@ router.get('/iptv/proxy', rateLimit({ windowMs: 60000, max: 120 }), iptvProxyGat
   let targetUrl;
   try {
     targetUrl = decodeURIComponent(url);
-    // P2-18: check async (literal + DNS resolve) thay vÃ¬ isPrivateHostname sync
+    // P2-18: check async (literal + DNS resolve) thay vì isPrivateHostname sync
     const check = await assertPublicUrlAsync(targetUrl);
     if (!check.ok) {
-      const code = (check.reason === 'URL khÃ´ng há»£p lá»‡' || check.reason === 'Chá»‰ cho phÃ©p http/https') ? 400 : 403;
+      const code = (check.reason === 'URL không hợp lệ' || check.reason === 'Chỉ cho phép http/https') ? 400 : 403;
       return res.status(code).json({ error: check.reason });
     }
   } catch {
@@ -1212,7 +1212,7 @@ router.get('/iptv/proxy', rateLimit({ windowMs: 60000, max: 120 }), iptvProxyGat
   }
 
   try {
-    // Chá»‘ng SSRF qua redirect: kiá»ƒm tra láº¡i Ä‘á»‹a chá»‰ má»—i bÆ°á»›c (tá»‘i Ä‘a 5 hops)
+    // Chống SSRF qua redirect: kiểm tra lại địa chỉ mỗi bước (tối đa 5 hops)
     let effectiveUrl = targetUrl;
     let upstream;
     for (let hop = 0; hop <= 5; hop++) {
@@ -1247,10 +1247,10 @@ router.get('/iptv/proxy', rateLimit({ windowMs: 60000, max: 120 }), iptvProxyGat
     res.setHeader('Content-Type', contentType);
     res.status(upstream.status);
 
-    // Náº¿u lÃ  file .m3u8 playlist thÃ¬ rewrite cÃ¡c URL â†’ tuyá»‡t Ä‘á»‘i qua proxy
+    // Nếu là file .m3u8 playlist thì rewrite các URL → tuyệt đối qua proxy
     if (contentType.toLowerCase().includes('mpegurl') || effectiveUrl.toLowerCase().endsWith('.m3u8')) {
       let body = await upstream.text();
-      // Chuáº©n hoÃ¡ CRLF -> LF (má»™t sá»‘ server dÃ¹ng CRLF, regex rewrite sáº½ miss)
+      // Chuẩn hoá CRLF -> LF (một số server dùng CRLF, regex rewrite sẽ miss)
       if (body.includes('\r\n')) body = body.replace(/\r\n/g, '\n');
 
       const base = effectiveUrl.substring(0, effectiveUrl.lastIndexOf('/') + 1);
@@ -1260,25 +1260,25 @@ router.get('/iptv/proxy', rateLimit({ windowMs: 60000, max: 120 }), iptvProxyGat
         if (u.startsWith('/')) return origin + u;
         return base + u;
       };
-      // Giá»¯ ?token= cho segment con (náº¿u client gá»i proxy kÃ¨m token qua query)
+      // Giữ ?token= cho segment con (nếu client gọi proxy kèm token qua query)
       const qsToken = req.query.token ? `&token=${encodeURIComponent(req.query.token)}` : '';
       const toProxy = (u) => `${req.protocol}://${req.get('host')}/api/services/iptv/proxy?url=${encodeURIComponent(toAbsolute(u))}${qsToken}`;
-      // 1) Rewrite dÃ²ng URI thÆ°á»ng (segment, variant playlist)
+      // 1) Rewrite dòng URI thường (segment, variant playlist)
       body = body.replace(/^(?!#)([^\r\n]+)$/gm, (line) => {
         line = line.trim();
         if (!line) return line;
         return toProxy(line);
       });
-      // 2) Rewrite URI náº±m TRONG dÃ²ng #EXT-X-MAP / #EXT-X-KEY / #EXT-X-MEDIA
-      //    (init segments fMP4, AES keys, audio/subtitle renditions) â€” náº¿u khÃ´ng
-      //    proxy, trÃ¬nh duyá»‡t fetch trá»±c tiáº¿p cross-origin â†’ CORS cháº·n â†’ máº¥t audio.
+      // 2) Rewrite URI nằm TRONG dòng #EXT-X-MAP / #EXT-X-KEY / #EXT-X-MEDIA
+      //    (init segments fMP4, AES keys, audio/subtitle renditions) — nếu không
+      //    proxy, trình duyệt fetch trực tiếp cross-origin → CORS chặn → mất audio.
       body = body.replace(/^(#EXT-X-(?:MAP|KEY|MEDIA)):([^\r\n]*)$/gim, (whole, tag, attrs) => {
         return tag + ':' + attrs.replace(/URI="([^"]*)"/gi, (m, u) => `URI="${toProxy(u)}"`);
       });
       return res.send(body);
     }
 
-    // Dá»¯ liá»‡u nhá»‹ phÃ¢n (ts segments, etc.) â€” pipe tháº³ng
+    // Dữ liệu nhị phân (ts segments, etc.) — pipe thẳng
     const buffer = await upstream.arrayBuffer();
     return res.send(Buffer.from(buffer));
   } catch (err) {
@@ -1343,9 +1343,9 @@ router.get('/iptv/channels', async (req, res) => {
         
         if (line.startsWith('#EXTINF:')) {
           const lastComma = line.lastIndexOf(',');
-          const name = lastComma >= 0 ? line.substring(lastComma + 1).trim() : 'KÃªnh Truyá»n HÃ¬nh';
+          const name = lastComma >= 0 ? line.substring(lastComma + 1).trim() : 'Kênh Truyền Hình';
 
-          // Bá» qua cÃ¡c kÃªnh Ä‘Ã£ Ä‘Æ°á»£c Ä‘Ã¡nh dáº¥u lÃ  Geo-blocked, Not 24/7, Offline, Blocked trong danh sÃ¡ch M3U
+          // Bỏ qua các kênh đã được đánh dấu là Geo-blocked, Not 24/7, Offline, Blocked trong danh sách M3U
           if (/geo-blocked|not 24\/7|offline|discontinued|blocked|dead/i.test(name)) {
             currentChannel = null;
             continue;
@@ -1384,7 +1384,7 @@ router.get('/iptv/channels', async (req, res) => {
       }
     }
 
-    // Lá»c kÃªnh nÆ°á»›c ngoÃ i khi filter quá»‘c gia â€” chá»‰ bá» kÃªnh rÃµ rÃ ng khÃ´ng pháº£i VN
+    // Lọc kênh nước ngoài khi filter quốc gia — chỉ bỏ kênh rõ ràng không phải VN
     if (country && country !== 'all' && country.trim()) {
       const targetCode = country.toUpperCase();
       const FOREIGN_BLACKLIST = /uniquely thai|lao sv|lao-thai|laos thai|thai tv|hmong tv|rtm asean|mnb world|vietnamese american|us viet|phoenix viet|little saigon|tea tv/i;
@@ -1398,32 +1398,32 @@ router.get('/iptv/channels', async (req, res) => {
       channels.push(...filtered);
     }
 
-    // Bá»• sung cÃ¡c kÃªnh Truyá»n HÃ¬nh Viá»‡t Nam trá»±c tiáº¿p (VTV, VTC, Tá»‰nh ThÃ nh)
+    // Bổ sung các kênh Truyền Hình Việt Nam trực tiếp (VTV, VTC, Tỉnh Thành)
     if (!category && (!country || country.toUpperCase() === 'VN')) {
       const vnDirectChannels = [
-        // VTV â€” nguá»“n FPTPlay (Ä‘ang sá»‘ng 100%)
-        { name: 'VTV1 HD - Thá»i Sá»± 24/7', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'News', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv1/live247-hls-avc/index.m3u8' },
-        { name: 'VTV2 HD - Khoa Há»c & GiÃ¡o Dá»¥c', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'Education', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv2/live247-hls-avc/index.m3u8' },
-        { name: 'VTV3 HD - Giáº£i TrÃ­ & Thá»ƒ Thao', logo: 'https://i.imgur.com/efrauLr.png', group: 'Entertainment', country: 'VN', url: 'https://live.fptplay53.net/live/media/vtv3/live247-hls-avc/index.m3u8' },
-        { name: 'VTV4 HD - Äá»‘i Ngoáº¡i Quá»‘c Táº¿', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv4/live247-hls-avc/index.m3u8' },
-        { name: 'VTV5 HD - Tiáº¿ng DÃ¢n Tá»™c', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv5/live247-hls-avc/index.m3u8' },
-        { name: 'VTV5 TÃ¢y Nam Bá»™ HD', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv5tnb/live-hls-avc/index.m3u8' },
-        { name: 'VTV5 TÃ¢y NguyÃªn HD', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://vips-livecdn.fptplay.net/live/media/vtv5tn/live-hls-avc/index.m3u8' },
-        { name: 'VTV6 HD - KÃªnh Thanh Thiáº¿u NiÃªn', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'Entertainment', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv6/live247-hls-avc/index.m3u8' },
-        { name: 'VTV7 HD - KÃªnh GiÃ¡o Dá»¥c Quá»‘c Gia', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'Education', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv7/live247-hls-avc/index.m3u8' },
-        { name: 'VTV9 HD - KÃªnh Nam Bá»™', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv9/live247-hls-avc/index.m3u8' },
-        { name: 'VTV10 HD - KÃªnh Äa Ná»n Táº£ng', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv10/live247-hls-avc/index.m3u8' },
-        // CÃ¡c Ä‘Ã i khÃ¡c â€” nguá»“n vtvprime (Ä‘ang sá»‘ng)
-        { name: 'ANTV - Truyá»n HÃ¬nh CÃ´ng An NhÃ¢n DÃ¢n', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'News', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/ANNINHTV/index.m3u8' },
-        { name: 'QPVN - Quá»‘c PhÃ²ng Viá»‡t Nam HD', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'News', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/QPTV/index.m3u8' },
+        // VTV — nguồn FPTPlay (đang sống 100%)
+        { name: 'VTV1 HD - Thời Sự 24/7', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'News', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv1/live247-hls-avc/index.m3u8' },
+        { name: 'VTV2 HD - Khoa Học & Giáo Dục', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'Education', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv2/live247-hls-avc/index.m3u8' },
+        { name: 'VTV3 HD - Giải Trí & Thể Thao', logo: 'https://i.imgur.com/efrauLr.png', group: 'Entertainment', country: 'VN', url: 'https://live.fptplay53.net/live/media/vtv3/live247-hls-avc/index.m3u8' },
+        { name: 'VTV4 HD - Đối Ngoại Quốc Tế', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv4/live247-hls-avc/index.m3u8' },
+        { name: 'VTV5 HD - Tiếng Dân Tộc', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv5/live247-hls-avc/index.m3u8' },
+        { name: 'VTV5 Tây Nam Bộ HD', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv5tnb/live-hls-avc/index.m3u8' },
+        { name: 'VTV5 Tây Nguyên HD', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://vips-livecdn.fptplay.net/live/media/vtv5tn/live-hls-avc/index.m3u8' },
+        { name: 'VTV6 HD - Kênh Thanh Thiếu Niên', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'Entertainment', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv6/live247-hls-avc/index.m3u8' },
+        { name: 'VTV7 HD - Kênh Giáo Dục Quốc Gia', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'Education', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv7/live247-hls-avc/index.m3u8' },
+        { name: 'VTV9 HD - Kênh Nam Bộ', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv9/live247-hls-avc/index.m3u8' },
+        { name: 'VTV10 HD - Kênh Đa Nền Tảng', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'General', country: 'VN', url: 'https://live-a.fptplay53.net/live/media/vtv10/live247-hls-avc/index.m3u8' },
+        // Các đài khác — nguồn vtvprime (đang sống)
+        { name: 'ANTV - Truyền Hình Công An Nhân Dân', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'News', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/ANNINHTV/index.m3u8' },
+        { name: 'QPVN - Quốc Phòng Việt Nam HD', logo: 'https://i.imgur.com/mgp6RAU.png', group: 'News', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/QPTV/index.m3u8' },
         { name: 'SCTV2 HD', logo: 'https://i.imgur.com/efrauLr.png', group: 'Entertainment', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/SCTV2/index.m3u8' },
-        { name: 'HTV Key - KÃªnh ChÃ¬a KhÃ³a VÃ ng', logo: 'https://i.imgur.com/efrauLr.png', group: 'Entertainment', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/HTVKey/index.m3u8' },
-        // KÃªnh Tá»‰nh ThÃ nh
-        { name: 'Cáº§n ThÆ¡ TV1 (1080p)', logo: '', group: 'General', country: 'VN', url: 'https://live.canthotv.vn/live/tv/chunklist.m3u8' },
-        { name: 'Cáº§n ThÆ¡ TV3 (1080p)', logo: '', group: 'General', country: 'VN', url: 'https://live.canthotv.vn/cs3/tv/chunklist.m3u8' },
-        { name: 'Äá»“ng ThÃ¡p TV1 (720p)', logo: '', group: 'General', country: 'VN', url: 'https://liveh34.vtvprime.vn/hls/DONGTHAPTV/index.m3u8' },
-        { name: 'ThÃ¡i NguyÃªn TV (720p)', logo: '', group: 'General', country: 'VN', url: 'https://streaming.thainguyentv.vn/hls/livestream.m3u8' },
-        // KÃªnh quá»‘c táº¿ liÃªn quan VN
+        { name: 'HTV Key - Kênh Chìa Khóa Vàng', logo: 'https://i.imgur.com/efrauLr.png', group: 'Entertainment', country: 'VN', url: 'https://liveh12.vtvprime.vn/hls/HTVKey/index.m3u8' },
+        // Kênh Tỉnh Thành
+        { name: 'Cần Thơ TV1 (1080p)', logo: '', group: 'General', country: 'VN', url: 'https://live.canthotv.vn/live/tv/chunklist.m3u8' },
+        { name: 'Cần Thơ TV3 (1080p)', logo: '', group: 'General', country: 'VN', url: 'https://live.canthotv.vn/cs3/tv/chunklist.m3u8' },
+        { name: 'Đồng Tháp TV1 (720p)', logo: '', group: 'General', country: 'VN', url: 'https://liveh34.vtvprime.vn/hls/DONGTHAPTV/index.m3u8' },
+        { name: 'Thái Nguyên TV (720p)', logo: '', group: 'General', country: 'VN', url: 'https://streaming.thainguyentv.vn/hls/livestream.m3u8' },
+        // Kênh quốc tế liên quan VN
         { name: 'TVB Vietnam (1080p)', logo: '', group: 'Entertainment', country: 'VN', url: 'https://amg01868-amg01868c3-tvbanywhere-us-4491.playouts.now.amagi.tv/playlist/amg01868-tvbusa-tvbvietnam-tvbanywhereus/playlist.m3u8' },
       ];
 
@@ -1449,7 +1449,7 @@ router.get('/iptv/channels', async (req, res) => {
 });
 
 
-// Map code -> tÃªn quá»‘c gia
+// Map code -> tên quốc gia
 const countryNames = {
   'VN': 'Vietnam', 'US': 'United States', 'GB': 'United Kingdom', 'FR': 'France',
   'DE': 'Germany', 'IT': 'Italy', 'ES': 'Spain', 'JP': 'Japan', 'KR': 'South Korea',
@@ -1480,7 +1480,7 @@ const countryNames = {
   'FJ': 'Fiji', 'SB': 'Solomon Islands', 'VU': 'Vanuatu', 'WS': 'Samoa',
   'KI': 'Kiribati', 'TO': 'Tonga', 'PG': 'Papua New Guinea', 'BT': 'Bhutan',
   'NP': 'Nepal', 'SL': 'Sierra Leone', 'LR': 'Liberia', 'GH': 'Ghana',
-  'CI': 'CÃ´te d\'Ivoire', 'SN': 'Senegal', 'ML': 'Mali', 'BJ': 'Benin',
+  'CI': 'Côte d\'Ivoire', 'SN': 'Senegal', 'ML': 'Mali', 'BJ': 'Benin',
   'BF': 'Burkina Faso', 'NE': 'Niger', 'TD': 'Chad', 'CF': 'Central African Republic',
   'CM': 'Cameroon', 'GA': 'Gabon', 'CG': 'Republic of the Congo', 'CD': 'Democratic Republic of the Congo',
   'AO': 'Angola', 'ZM': 'Zambia', 'ZW': 'Zimbabwe', 'MW': 'Malawi',
@@ -1498,7 +1498,7 @@ const countryNames = {
   'MC': 'Monaco', 'LI': 'Liechtenstein', 'SM': 'San Marino', 'VA': 'Vatican City'
 };
 
-// IPTV Countries list - 250+ quá»‘c gia vá»›i MÃ£ Quá»‘c Gia (English) + Cá»
+// IPTV Countries list - 250+ quốc gia với Mã Quốc Gia (English) + Cờ
 router.get('/iptv/countries', async (req, res) => {
   try {
     let countryList = [];
@@ -1516,7 +1516,7 @@ router.get('/iptv/countries', async (req, res) => {
         }));
       }
     } catch (e) {
-      console.log('[IPTV] Lá»—i fetch countries API, dÃ¹ng fallback:', e.message);
+      console.log('[IPTV] Lỗi fetch countries API, dùng fallback:', e.message);
     }
 
     if (!countryList.length) {
@@ -1527,7 +1527,7 @@ router.get('/iptv/countries', async (req, res) => {
       }));
     }
 
-    // Ghim VN lÃªn Ä‘áº§u, sau Ä‘Ã³ sáº¯p xáº¿p theo TÃªn Quá»‘c Gia (A-Z)
+    // Ghim VN lên đầu, sau đó sắp xếp theo Tên Quốc Gia (A-Z)
     countryList.sort((a, b) => {
       if (a.code === 'VN') return -1;
       if (b.code === 'VN') return 1;
@@ -1542,14 +1542,14 @@ router.get('/iptv/countries', async (req, res) => {
 
 // ------------------- OFFICE API: DOCX / PPTX / PDF -------------------
 
-// POST /api/office/generate-docx - Táº¡o file Word tá»« text (Markdown -> DOCX)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// YOUTUBE FREE: Xem YouTube khÃ´ng quáº£ng cÃ¡o â€” nhÆ° Premium free
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// 20/9/2026: engine Ä‘Ã£ Ä‘á»•i sang youtube-dl-exec (npm, binary yt-dlp tá»± táº£i lÃºc
-// npm install) â€” KHÃ”NG cáº§n Python ná»¯a. Sá»­a lá»—i "YouTube cháº¿t trÃªn Render free".
-// FREE-ALL (QA 22/9/2026): YouTube cho khÃ¡ch vÃ£ng lai â€” gá»¡ auth khá»i search/stream/status
-// (user yÃªu cáº§u: khÃ´ng cáº§n Ä‘Äƒng nháº­p váº«n xem Ä‘Æ°á»£c). Giá»¯ rateLimit + proxyAuth á»Ÿ /proxy.
+// POST /api/office/generate-docx - Tạo file Word từ text (Markdown -> DOCX)
+// ─────────────────────────────────────────────────────────────────────────────
+// YOUTUBE FREE: Xem YouTube không quảng cáo — như Premium free
+// ─────────────────────────────────────────────────────────────────────────────
+// 20/9/2026: engine đã đổi sang youtube-dl-exec (npm, binary yt-dlp tự tải lúc
+// npm install) — KHÔNG cần Python nữa. Sửa lỗi "YouTube chết trên Render free".
+// FREE-ALL (QA 22/9/2026): YouTube cho khách vãng lai — gỡ auth khỏi search/stream/status
+// (user yêu cầu: không cần đăng nhập vẫn xem được). Giữ rateLimit + proxyAuth ở /proxy.
 router.get('/youtube/status', async (req, res) => {
   try {
     const st = await ytdlp.getStatus();
@@ -1557,7 +1557,7 @@ router.get('/youtube/status', async (req, res) => {
       success: true,
       ...st,
       ffmpegPath: ffmpegPath || null,
-      note: !st.ready ? 'Binary yt-dlp chÆ°a táº£i (npm install láº¡i Ä‘á»ƒ postinstall táº£i binary).' : undefined,
+      note: !st.ready ? 'Binary yt-dlp chưa tải (npm install lại để postinstall tải binary).' : undefined,
     });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -1566,10 +1566,10 @@ router.get('/youtube/status', async (req, res) => {
 
 router.get('/youtube/search', async (req, res) => {
   const { q, limit } = req.query;
-  if (!q) return res.status(400).json({ error: 'Thiáº¿u tá»« khÃ³a (q)' });
+  if (!q) return res.status(400).json({ error: 'Thiếu từ khóa (q)' });
   try {
     const result = await searchVideos(q, parseInt(limit, 10) || 12);
-    // searchVideos tráº£ { videos: [...] } â€” unwrap Ä‘á»ƒ FE nháº­n array (YouTubeTab.jsx:106)
+    // searchVideos trả { videos: [...] } — unwrap để FE nhận array (YouTubeTab.jsx:106)
     res.json({ success: true, videos: Array.isArray(result) ? result : (result.videos || []) });
   } catch (e) {
     console.error('[YouTube] Search error:', e.message);
@@ -1579,7 +1579,7 @@ router.get('/youtube/search', async (req, res) => {
 
 router.get('/youtube/stream', async (req, res) => {
   const { url } = req.query;
-  if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video khÃ´ng há»£p lá»‡ (chá»‰ há»— trá»£ YouTube).' });
+  if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video không hợp lệ (chỉ hỗ trợ YouTube).' });
   try {
     const info = await getVideoStream(url);
     res.json({ success: true, ...info });
@@ -1589,21 +1589,21 @@ router.get('/youtube/stream', async (req, res) => {
   }
 });
 
-// BÃ¬nh luáº­n video â€” láº¥y qua worker (yt-dlp --write-comments, cháº­m 10-30s), cache 24h in-memory.
-// YouTube cÃ³ thá»ƒ cháº·n IP Render nÃªn cháº¡y qua worker (IP nhÃ ) nhÆ° /stream.
+// Bình luận video — lấy qua worker (yt-dlp --write-comments, chậm 10-30s), cache 24h in-memory.
+// YouTube có thể chặn IP Render nên chạy qua worker (IP nhà) như /stream.
 router.get('/youtube/comments', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) => {
   const { url } = req.query;
-  if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video khÃ´ng há»£p lá»‡ (chá»‰ há»— trá»£ YouTube).' });
+  if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video không hợp lệ (chỉ hỗ trợ YouTube).' });
 
   if (!globalThis.__ytCommentsCache) globalThis.__ytCommentsCache = new Map();
   const cacheKey = url.replace(/^https?:\/\/(www\.)?youtube\.com\/watch\?v=/, '').replace(/&.*$/, '').replace(/^https?:\/\/youtu\.be\//, '');
-  // Comment local cá»§a app luÃ´n Ä‘á»c fresh tá»« DB (khÃ´ng qua cache yt-dlp)
+  // Comment local của app luôn đọc fresh từ DB (không qua cache yt-dlp)
   const localRows = await dbAll(
     'SELECT id, ten_hien_thi AS author, noi_dung AS text, ngay_tao AS time FROM binh_luan_youtube WHERE video_id = ? ORDER BY ngay_tao DESC LIMIT 50',
     [cacheKey]
   ).catch(() => []);
   const localComments = (localRows || []).map((r) => ({
-    id: r.id, author: r.author || 'Báº¡n', text: r.text, likes: 0,
+    id: r.id, author: r.author || 'Bạn', text: r.text, likes: 0,
     time: String(r.time || '').substring(0, 10), local: true,
   }));
   const hit = globalThis.__ytCommentsCache.get(cacheKey);
@@ -1614,40 +1614,40 @@ router.get('/youtube/comments', rateLimit({ windowMs: 60000, max: 30 }), async (
   try {
     const workerUrl = (process.env.YTDLP_WORKER_URL || '').trim().replace(/\/+$/, '');
     const workerTok = (process.env.YTDLP_WORKER_TOKEN || '').trim();
-    if (!workerUrl) return res.status(503).json({ success: false, error: 'Thiáº¿u worker Ä‘á»ƒ láº¥y bÃ¬nh luáº­n (YTDLP_WORKER_URL).' });
+    if (!workerUrl) return res.status(503).json({ success: false, error: 'Thiếu worker để lấy bình luận (YTDLP_WORKER_URL).' });
     const resp = await fetch(`${workerUrl}/comments?${workerTok ? `token=${encodeURIComponent(workerTok)}&` : ''}id=${encodeURIComponent(cacheKey)}`, { signal: AbortSignal.timeout(100000) });
     const data = await resp.json();
     if (!data.ok) {
-      // Worker thua â†’ váº«n tráº£ comment local (khÃ´ng tráº¯ng trang)
+      // Worker thua → vẫn trả comment local (không trắng trang)
       if (localComments.length) return res.json({ success: true, comments: localComments, count: localComments.length, localCount: localComments.length });
-      return res.status(500).json({ success: false, error: data.error || 'Láº¥y bÃ¬nh luáº­n tháº¥t báº¡i.' });
+      return res.status(500).json({ success: false, error: data.error || 'Lấy bình luận thất bại.' });
     }
     globalThis.__ytCommentsCache.set(cacheKey, { t: Date.now(), data: { comments: data.comments, count: data.count } });
     res.json({ success: true, comments: [...localComments, ...(data.comments || [])], count: data.count, localCount: localComments.length });
   } catch (e) {
     console.error('[YouTube] Comments error:', e.message);
-    // Worker/timeout thua â†’ váº«n tráº£ comment local (khÃ´ng tráº¯ng trang)
+    // Worker/timeout thua → vẫn trả comment local (không trắng trang)
     if (localComments.length) return res.json({ success: true, comments: localComments, count: localComments.length, localCount: localComments.length });
-    res.status(500).json({ success: false, error: 'Lá»—i láº¥y bÃ¬nh luáº­n: ' + e.message });
+    res.status(500).json({ success: false, error: 'Lỗi lấy bình luận: ' + e.message });
   }
 });
 
-// Avatar kÃªnh YouTube tháº­t â€” qua worker (yt-dlp trang channel â†’ avatar_uncropped).
-// Cache 7 ngÃ y in-memory (avatar hiáº¿m khi Ä‘á»•i). FE hiá»ƒn thá»‹ chá»¯ cÃ¡i trÆ°á»›c,
-// swap sang áº£nh tháº­t khi vá» (progressive enhancement nhÆ° YouTube).
+// Avatar kênh YouTube thật — qua worker (yt-dlp trang channel → avatar_uncropped).
+// Cache 7 ngày in-memory (avatar hiếm khi đổi). FE hiển thị chữ cái trước,
+// swap sang ảnh thật khi về (progressive enhancement như YouTube).
 if (!globalThis.__ytAvatarCache) globalThis.__ytAvatarCache = new Map();
 const YT_AVATAR_TTL_MS = 7 * 24 * 3600 * 1000;
 router.get('/youtube/channel-avatar', rateLimit({ windowMs: 60000, max: 60 }), async (req, res) => {
   let channelId = String(req.query.channel_id || '').trim();
   const videoId = String(req.query.video_id || '').trim();
-  // Cache video â†’ channel (24h): resolve qua worker /info cháº­m ~10-22s vÃ  bá»‹ gá»i
-  // láº·p láº¡i má»—i láº§n retry/refresh (avatar grid 16 video). Nhá»› map Ä‘á»ƒ láº§n sau ~instant.
+  // Cache video → channel (24h): resolve qua worker /info chậm ~10-22s và bị gọi
+  // lặp lại mỗi lần retry/refresh (avatar grid 16 video). Nhớ map để lần sau ~instant.
   if (!globalThis.__ytVidChannelCache) globalThis.__ytVidChannelCache = new Map();
   const YT_VIDCH_TTL_MS = 24 * 3600 * 1000;
-  // Flat search Ä‘Ã´i khi tráº£ channel_id rá»—ng/"NA" â†’ resolve tá»« video page (luÃ´n cÃ³ channel_id)
+  // Flat search đôi khi trả channel_id rỗng/"NA" → resolve từ video page (luôn có channel_id)
   if (!/^UC[\w-]{20,}$/.test(channelId)) {
     if (!/^[\w-]{6,}$/.test(videoId)) {
-      return res.status(400).json({ success: false, error: 'channel_id khÃ´ng há»£p lá»‡.' });
+      return res.status(400).json({ success: false, error: 'channel_id không hợp lệ.' });
     }
     const vhit = globalThis.__ytVidChannelCache.get(videoId);
     if (vhit && Date.now() - vhit.t < YT_VIDCH_TTL_MS && /^UC[\w-]{20,}$/.test(vhit.id || '')) {
@@ -1656,7 +1656,7 @@ router.get('/youtube/channel-avatar', rateLimit({ windowMs: 60000, max: 60 }), a
       try {
         const workerUrl0 = (process.env.YTDLP_WORKER_URL || '').trim().replace(/\/+$/, '');
         const workerTok0 = (process.env.YTDLP_WORKER_TOKEN || '').trim();
-        if (!workerUrl0) return res.status(503).json({ success: false, error: 'Thiáº¿u worker.' });
+        if (!workerUrl0) return res.status(503).json({ success: false, error: 'Thiếu worker.' });
         const ir = await fetch(`${workerUrl0}/info?${workerTok0 ? `token=${encodeURIComponent(workerTok0)}&` : ''}id=${encodeURIComponent(videoId)}`, { signal: AbortSignal.timeout(45000) });
         const ij = await ir.json().catch(() => null);
         if (ij && ij.ok && /^UC[\w-]{20,}$/.test(ij.channel_id || '')) {
@@ -1667,10 +1667,10 @@ router.get('/youtube/channel-avatar', rateLimit({ windowMs: 60000, max: 60 }), a
             globalThis.__ytVidChannelCache.delete(firstKey);
           }
         } else {
-          return res.status(404).json({ success: false, error: 'KhÃ´ng xÃ¡c Ä‘á»‹nh Ä‘Æ°á»£c kÃªnh cá»§a video.' });
+          return res.status(404).json({ success: false, error: 'Không xác định được kênh của video.' });
         }
       } catch (e) {
-        return res.status(502).json({ success: false, error: 'Lá»—i resolve kÃªnh: ' + e.message });
+        return res.status(502).json({ success: false, error: 'Lỗi resolve kênh: ' + e.message });
       }
     }
   }
@@ -1681,10 +1681,10 @@ router.get('/youtube/channel-avatar', rateLimit({ windowMs: 60000, max: 60 }), a
   try {
     const workerUrl = (process.env.YTDLP_WORKER_URL || '').trim().replace(/\/+$/, '');
     const workerTok = (process.env.YTDLP_WORKER_TOKEN || '').trim();
-    if (!workerUrl) return res.status(503).json({ success: false, error: 'Thiáº¿u worker (YTDLP_WORKER_URL).' });
+    if (!workerUrl) return res.status(503).json({ success: false, error: 'Thiếu worker (YTDLP_WORKER_URL).' });
     const resp = await fetch(`${workerUrl}/channel-avatar?${workerTok ? `token=${encodeURIComponent(workerTok)}&` : ''}id=${encodeURIComponent(channelId)}`, { signal: AbortSignal.timeout(40000) });
     const data = await resp.json();
-    if (!data.ok || !data.avatar_url) return res.status(500).json({ success: false, error: data.error || 'Láº¥y avatar tháº¥t báº¡i.' });
+    if (!data.ok || !data.avatar_url) return res.status(500).json({ success: false, error: data.error || 'Lấy avatar thất bại.' });
     const out = { channel_id: channelId, avatar_url: data.avatar_url, channel: data.channel || '' };
     globalThis.__ytAvatarCache.set(channelId, { t: Date.now(), data: out });
     if (globalThis.__ytAvatarCache.size > 500) {
@@ -1694,15 +1694,15 @@ router.get('/youtube/channel-avatar', rateLimit({ windowMs: 60000, max: 60 }), a
     res.json({ success: true, ...out });
   } catch (e) {
     console.error('[YouTube] Channel-avatar error:', e.message);
-    res.status(500).json({ success: false, error: 'Lá»—i láº¥y avatar: ' + e.message });
+    res.status(500).json({ success: false, error: 'Lỗi lấy avatar: ' + e.message });
   }
 });
 
-// â”€â”€â”€ BÃ¬nh luáº­n LOCAL (cá»§a app, khÃ´ng cáº§n Google OAuth) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// YouTube Data API Ä‘Ã²i OAuth scope youtube.force-ssl + user re-consent nÃªn
-// comment app Ä‘á»ƒ á»Ÿ lá»›p riÃªng: ai cÅ©ng xem/gá»­i Ä‘Æ°á»£c bÃ¬nh luáº­n ngay trong app,
-// khÃ´ng phá»¥ thuá»™c tÃ i khoáº£n Google. Comment yt-dlp (GET /comments) + comment
-// local hiá»ƒn thá»‹ chung trong tab (local ghim lÃªn Ä‘áº§u, cÃ³ nhÃ£n "trong app").
+// ─── Bình luận LOCAL (của app, không cần Google OAuth) ─────────────────────
+// YouTube Data API đòi OAuth scope youtube.force-ssl + user re-consent nên
+// comment app để ở lớp riêng: ai cũng xem/gửi được bình luận ngay trong app,
+// không phụ thuộc tài khoản Google. Comment yt-dlp (GET /comments) + comment
+// local hiển thị chung trong tab (local ghim lên đầu, có nhãn "trong app").
 db.run(`CREATE TABLE IF NOT EXISTS binh_luan_youtube (
   id TEXT PRIMARY KEY,
   video_id TEXT NOT NULL,
@@ -1713,15 +1713,15 @@ db.run(`CREATE TABLE IF NOT EXISTS binh_luan_youtube (
 )`, () => {});
 db.run('CREATE INDEX IF NOT EXISTS idx_binhluan_video ON binh_luan_youtube (video_id, ngay_tao DESC)', () => {});
 
-// Gá»­i bÃ¬nh luáº­n LÃŠN YOUTUBE THáº¬T qua YouTube Data API (cáº§n Google OAuth scope
-// youtube.force-ssl). FE gá»­i cÃ¹ng lÃºc vá»›i comment local; khÃ´ng cÃ³ token liÃªn káº¿t
-// thÃ¬ chá»‰ lÆ°u local. Access token háº¿t háº¡n â†’ dÃ¹ng refresh token Ä‘á»ƒ láº¥y má»›i.
+// Gửi bình luận LÊN YOUTUBE THẬT qua YouTube Data API (cần Google OAuth scope
+// youtube.force-ssl). FE gửi cùng lúc với comment local; không có token liên kết
+// thì chỉ lưu local. Access token hết hạn → dùng refresh token để lấy mới.
 router.post('/youtube/comments/youtube', authMiddleware, async (req, res) => {
   try {
     const { url, text } = req.body || {};
-    if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video khÃ´ng há»£p lá»‡.' });
+    if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video không hợp lệ.' });
     const content = String(text || '').trim().slice(0, 2000);
-    if (content.length < 1) return res.status(400).json({ success: false, error: 'BÃ¬nh luáº­n trá»‘ng.' });
+    if (content.length < 1) return res.status(400).json({ success: false, error: 'Bình luận trống.' });
     const vid = url.replace(/^https?:\/\/(www\.)?youtube\.com\/watch\?v=/, '').replace(/&.*$/, '').replace(/^https?:\/\/youtu\.be\//, '');
 
     const { decryptKey } = require('../utils/cryptoKeys');
@@ -1731,7 +1731,7 @@ router.post('/youtube/comments/youtube', authMiddleware, async (req, res) => {
     ).catch(() => null);
     const hasScope = row && String(row.scope || '').includes('youtube.force-ssl');
     if (!row || !hasScope) {
-      return res.status(409).json({ success: false, error: 'NO_YOUTUBE_SCOPE', message: 'ChÆ°a liÃªn káº¿t quyá»n YouTube (Ä‘Äƒng nháº­p Google láº¡i, tick Ã´ YouTube).' });
+      return res.status(409).json({ success: false, error: 'NO_YOUTUBE_SCOPE', message: 'Chưa liên kết quyền YouTube (đăng nhập Google lại, tick ô YouTube).' });
     }
     let access = decryptKey(row.access_token);
     const doPost = (tok) => fetch('https://www.googleapis.com/youtube/v3/commentThreads?part=snippet', {
@@ -1742,7 +1742,7 @@ router.post('/youtube/comments/youtube', authMiddleware, async (req, res) => {
     });
     let r = await doPost(access);
     if (r.status === 401 && row.refresh_token) {
-      // Access háº¿t háº¡n â†’ refresh rá»“i thá»­ láº¡i 1 láº§n
+      // Access hết hạn → refresh rồi thử lại 1 lần
       const rt = decryptKey(row.refresh_token);
       const tk = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -1754,7 +1754,7 @@ router.post('/youtube/comments/youtube', authMiddleware, async (req, res) => {
           grant_type: 'refresh_token',
         }),
       }).then((x) => x.json()).catch(() => ({}));
-      if (!tk.access_token) return res.status(401).json({ success: false, error: 'Token Google háº¿t háº¡n, vui lÃ²ng Ä‘Äƒng nháº­p Google láº¡i.' });
+      if (!tk.access_token) return res.status(401).json({ success: false, error: 'Token Google hết hạn, vui lòng đăng nhập Google lại.' });
       const { encryptKey } = require('../utils/cryptoKeys');
       access = tk.access_token;
       await dbRun('UPDATE google_oauth_tokens SET access_token = ?, ngay_cap_nhat = CURRENT_TIMESTAMP WHERE ma_nguoi_dung = ?', [encryptKey(access), req.user.id]).catch(() => {});
@@ -1762,33 +1762,33 @@ router.post('/youtube/comments/youtube', authMiddleware, async (req, res) => {
     }
     if (!r.ok) {
       const detail = await r.text().catch(() => '');
-      return res.status(502).json({ success: false, error: `YouTube tá»« chá»‘i (HTTP ${r.status}). ${detail.substring(0, 180)}` });
+      return res.status(502).json({ success: false, error: `YouTube từ chối (HTTP ${r.status}). ${detail.substring(0, 180)}` });
     }
     res.json({ success: true });
   } catch (e) {
     console.error('[YouTube] Comment-to-YouTube error:', e.message);
-    res.status(500).json({ success: false, error: 'Lá»—i gá»­i bÃ¬nh luáº­n lÃªn YouTube: ' + e.message });
+    res.status(500).json({ success: false, error: 'Lỗi gửi bình luận lên YouTube: ' + e.message });
   }
 });
 router.post('/youtube/comments/local', authMiddleware, async (req, res) => {
   try {
     const { url, text } = req.body || {};
-    if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video khÃ´ng há»£p lá»‡.' });
+    if (!url || !isValidYouTubeUrl(url)) return res.status(400).json({ success: false, error: 'URL/ID video không hợp lệ.' });
     const content = String(text || '').trim().slice(0, 2000);
-    if (content.length < 1) return res.status(400).json({ success: false, error: 'BÃ¬nh luáº­n trá»‘ng.' });
+    if (content.length < 1) return res.status(400).json({ success: false, error: 'Bình luận trống.' });
     const vid = url.replace(/^https?:\/\/(www\.)?youtube\.com\/watch\?v=/, '').replace(/&.*$/, '').replace(/^https?:\/\/youtu\.be\//, '');
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const me = req.user || {};
     const uid = me.ma_nguoi_dung || me.id || 'guest';
-    // JWT chá»‰ chá»©a {id, role} â€” JWT payload khÃ´ng cÃ³ ten_day_du/email â†’ tra DB theo ma_nguoi_dung
+    // JWT chỉ chứa {id, role} — JWT payload không có ten_day_du/email → tra DB theo ma_nguoi_dung
     let tenHienThi = me.ten_day_du || me.email || '';
     if (!tenHienThi && uid !== 'guest') {
       try {
         const u = await dbGet('SELECT ten_day_du, email FROM nguoi_dung WHERE ma_nguoi_dung = ?', [uid]);
         if (u) tenHienThi = u.ten_day_du || u.email || '';
-      } catch { /* giá»¯ fallback */ }
+      } catch { /* giữ fallback */ }
     }
-    tenHienThi = tenHienThi || 'Báº¡n';
+    tenHienThi = tenHienThi || 'Bạn';
     await dbRun(
       'INSERT INTO binh_luan_youtube (id, video_id, ma_nguoi_dung, ten_hien_thi, noi_dung) VALUES (?, ?, ?, ?, ?)',
       [id, vid, uid, tenHienThi, content]
@@ -1796,16 +1796,16 @@ router.post('/youtube/comments/local', authMiddleware, async (req, res) => {
     res.json({ success: true, comment: { id, author: tenHienThi, text: content, likes: 0, time: new Date().toISOString().substring(0, 10), local: true } });
   } catch (e) {
     console.error('[YouTube] Local comment error:', e.message);
-    res.status(500).json({ success: false, error: 'Lá»—i gá»­i bÃ¬nh luáº­n: ' + e.message });
+    res.status(500).json({ success: false, error: 'Lỗi gửi bình luận: ' + e.message });
   }
 });
 
-// â”€â”€â”€ CLASSROOM PROXY (OpenMAIC) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// open.maic.chat Cáº¤M iframe (X-Frame-Options: SAMEORIGIN + CSP frame-ancestors
-// 'self' â€” Ä‘Ã£ verify báº±ng curl) â†’ iframe trá»±c tiáº¿p KHÃ”NG BAO GIá»œ load Ä‘Æ°á»£c.
-// Proxy qua backend: strip frame headers + rewrite URL vá» /api/classroom/*.
-// YÃªu cáº§u Ä‘Äƒng nháº­p (token qua Authorization header hoáº·c ?token= â€” iframe khÃ´ng
-// gá»­i Ä‘Æ°á»£c header). RateLimit cao vÃ¬ app Next.js táº£i nhiá»u chunk/API.
+// ─── CLASSROOM PROXY (OpenMAIC) ────────────────────────────────────────────
+// open.maic.chat CẤM iframe (X-Frame-Options: SAMEORIGIN + CSP frame-ancestors
+// 'self' — đã verify bằng curl) → iframe trực tiếp KHÔNG BAO GIỜ load được.
+// Proxy qua backend: strip frame headers + rewrite URL về /api/classroom/*.
+// Yêu cầu đăng nhập (token qua Authorization header hoặc ?token= — iframe không
+// gửi được header). RateLimit cao vì app Next.js tải nhiều chunk/API.
 const MAIC_UPSTREAM = 'https://open.maic.chat';
 
 async function classroomAuth(req) {
@@ -1823,9 +1823,9 @@ async function classroomAuth(req) {
 
 router.use('/classroom', rateLimit({ windowMs: 60000, max: 300 }), async (req, res) => {
   const user = await classroomAuth(req);
-  if (!user) return res.status(401).send('Unauthorized â€” vui lÃ²ng Ä‘Äƒng nháº­p Rexi AI Ä‘á»ƒ dÃ¹ng Lá»›p Há»c AI.');
+  if (!user) return res.status(401).send('Unauthorized — vui lòng đăng nhập Rexi AI để dùng Lớp Học AI.');
 
-  // subpath sau /api/classroom (Express 5 Ä‘Ã£ strip mount point khá»i req.url)
+  // subpath sau /api/classroom (Express 5 đã strip mount point khỏi req.url)
   let sub = req.url || '/';
   if (!sub.startsWith('/')) sub = '/' + sub;
   const targetUrl = MAIC_UPSTREAM + sub;
@@ -1833,7 +1833,7 @@ router.use('/classroom', rateLimit({ windowMs: 60000, max: 300 }), async (req, r
   const base = `${req.protocol}://${req.get('host')}/api/services/classroom`;
 
   try {
-    // Forward headers (bá» host/connection/content-length â€” fetch tá»± tÃ­nh)
+    // Forward headers (bỏ host/connection/content-length — fetch tự tính)
     const fwdHeaders = {};
     for (const [k, v] of Object.entries(req.headers || {})) {
       const lk = k.toLowerCase();
@@ -1844,7 +1844,7 @@ router.use('/classroom', rateLimit({ windowMs: 60000, max: 300 }), async (req, r
     fwdHeaders['origin'] = MAIC_UPSTREAM;
     fwdHeaders['referer'] = MAIC_UPSTREAM + '/';
 
-    // Body: JSON/urlencoded Ä‘Ã£ parse sáºµn â†’ serialize láº¡i; cÃ²n láº¡i (multipart/binary) stream raw
+    // Body: JSON/urlencoded đã parse sẵn → serialize lại; còn lại (multipart/binary) stream raw
     let body;
     const ct = String(req.headers['content-type'] || '').toLowerCase();
     const method = (req.method || 'GET').toUpperCase();
@@ -1862,7 +1862,7 @@ router.use('/classroom', rateLimit({ windowMs: 60000, max: 300 }), async (req, r
       signal: AbortSignal.timeout(120000),
     });
 
-    // Redirect: rewrite Location vá» proxy (khÃ´ng auto-follow Ä‘á»ƒ browser Ä‘i Ä‘Ãºng Ä‘Æ°á»ng proxy)
+    // Redirect: rewrite Location về proxy (không auto-follow để browser đi đúng đường proxy)
     if (upstream.status >= 300 && upstream.status < 400) {
       const loc = upstream.headers.get('location');
       if (loc) {
@@ -1873,51 +1873,51 @@ router.use('/classroom', rateLimit({ windowMs: 60000, max: 300 }), async (req, r
       }
     }
 
-    // Copy headers â€” TRá»ª frame-blocking (cho phÃ©p iframe) + hop-by-hop
+    // Copy headers — TRỪ frame-blocking (cho phép iframe) + hop-by-hop
     const dropHeaders = new Set(['x-frame-options', 'content-security-policy', 'content-security-policy-report-only', 'content-length', 'transfer-encoding', 'connection', 'content-encoding']);
     upstream.headers.forEach((v, k) => {
       const lk = k.toLowerCase();
       if (dropHeaders.has(lk) || lk === 'set-cookie') return;
-      try { res.setHeader(k, v); } catch (e) { /* header khÃ´ng há»£p lá»‡ â€” bá» qua */ }
+      try { res.setHeader(k, v); } catch (e) { /* header không hợp lệ — bỏ qua */ }
     });
-    // Cookies: forward, strip Domain (thÃ nh host-only = domain mÃ¬nh) + scope Path vá» /api/services/classroom
+    // Cookies: forward, strip Domain (thành host-only = domain mình) + scope Path về /api/services/classroom
     const getSetCookie = typeof upstream.headers.getSetCookie === 'function' ? upstream.headers.getSetCookie() : [];
     for (const sc of getSetCookie) {
       let fixed = String(sc).replace(/;\s*domain=[^;]*/i, '').replace(/;\s*[Pp]ath=\/(?=;|$)/, '; Path=/api/services/classroom');
-      try { res.append('set-cookie', fixed); } catch (e) { /* bá» qua */ }
+      try { res.append('set-cookie', fixed); } catch (e) { /* bỏ qua */ }
     }
-    // Náº¿u upstream váº«n cháº·n frame báº±ng CSP khÃ¡c (report-only Ä‘Ã£ strip) â€” Ã©p thÃªm header má»Ÿ.
-    // QUAN TRá»ŒNG: helmet cá»§a chÃ­nh backend mÃ¬nh gáº¯n X-Frame-Options: SAMEORIGIN lÃªn
-    // Má»ŒI response â†’ pháº£i gá»¡ á»Ÿ Ä‘Ã¢y, náº¿u khÃ´ng iframe váº«n bá»‹ cháº·n.
+    // Nếu upstream vẫn chặn frame bằng CSP khác (report-only đã strip) — ép thêm header mở.
+    // QUAN TRỌNG: helmet của chính backend mình gắn X-Frame-Options: SAMEORIGIN lên
+    // MỌI response → phải gỡ ở đây, nếu không iframe vẫn bị chặn.
     res.removeHeader('x-frame-options');
     res.setHeader('content-security-policy', "frame-ancestors 'self' https://rexiai.bot.cd https://www.rexiai.bot.cd https://rexiai.de5.net https://*.vercel.app http://localhost:*");
 
     const rct = (upstream.headers.get('content-type') || '').toLowerCase();
     if (rct.includes('text/html')) {
       let html = await upstream.text();
-      // Tuyá»‡t Ä‘á»‘i vá» upstream â†’ vá» proxy
+      // Tuyệt đối về upstream → về proxy
       html = html.split(MAIC_UPSTREAM).join(base);
-      // Root-absolute trong attributes (Next.js dÃ¹ng /_next/, /api/, /favicon...)
+      // Root-absolute trong attributes (Next.js dùng /_next/, /api/, /favicon...)
       html = html.replace(/(src|href|action|srcset|content|data-src)="\/([^\/"])/g, `$1="${base}/$2`);
       html = html.replace(/(src|href|action|srcset|content|data-src)='\/([^\/'])/g, `$1='${base}/$2`);
       html = html.replace(/url\(\s*\/(?!\/)/g, `url(${base}/`);
-      // JS string literals gá»i API cÃ¹ng origin: fetch("/api/..."), "/_next/..." â†’ vá» proxy
+      // JS string literals gọi API cùng origin: fetch("/api/..."), "/_next/..." → về proxy
       html = html.replace(/"\/api\//g, `"${base}/api/`);
       html = html.replace(/'\/api\//g, `'${base}/api/`);
       html = html.replace(/`\/api\//g, `\`${base}/api/`);
       html = html.replace(/"\/_next\//g, `"${base}/_next/`);
       html = html.replace(/'\/_next\//g, `'${base}/_next/`);
-      // Boot-script (inject CUá»I Ä‘á»ƒ regex rewrite á»Ÿ trÃªn khÃ´ng cháº¡m vÃ o nÃ³):
-      // Next.js render link/fetch lÃºc runtime báº±ng path root-absolute ("/home", fetch("/api/..."))
-      // â†’ trÃ¬nh duyá»‡t resolve vá» domain mÃ¬nh, THOÃT proxy. Patch fetch/XHR/click/history/EventSource
-      // Ä‘á»ƒ má»i request cÃ¹ng-origin Ä‘i qua /api/services/classroom.
+      // Boot-script (inject CUỐI để regex rewrite ở trên không chạm vào nó):
+      // Next.js render link/fetch lúc runtime bằng path root-absolute ("/home", fetch("/api/..."))
+      // → trình duyệt resolve về domain mình, THOÁT proxy. Patch fetch/XHR/click/history/EventSource
+      // để mọi request cùng-origin đi qua /api/services/classroom.
       const BOOT = `<script>(function(){var P='/api/services/classroom';function fix(u){if(typeof u!=='string')return u;if(u.charAt(0)==='/'&&u.charAt(1)!=='/'){if(u.indexOf('/api/')===0||u.indexOf('/_next/')===0||u.indexOf('/favicon')===0||u.indexOf('/manifest')===0||u.indexOf('/robots')===0)return P+u;}return u;}try{var _f=window.fetch;window.fetch=function(i,n){if(typeof i==='string')i=fix(i);else if(i&&i.url){try{i=new Request(fix(i.url),i);}catch(e){}}return _f.call(this,i,n);};var _o=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){if(typeof u==='string')u=fix(u);return _o.call(this,m,u);};document.addEventListener('click',function(e){if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;var h=a.getAttribute('href');if(h&&h.charAt(0)==='/'&&h.charAt(1)!=='/'&&h.indexOf('/api/services/classroom')!==0){e.preventDefault();e.stopPropagation();window.location.assign(P+h);}},true);['pushState','replaceState'].forEach(function(k){var _h=history[k];history[k]=function(s,t,u){if(typeof u==='string'&&u.charAt(0)==='/'&&u.charAt(1)!=='/'&&u.indexOf('/api/services/classroom')!==0)u=P+u;return _h.call(this,s,t,u);};});if(window.EventSource){var _E=window.EventSource;window.EventSource=function(u,c){if(typeof u==='string')u=fix(u);return new _E(u,c);};window.EventSource.prototype=_E.prototype;}}catch(e){}})();<\/script>`;
       if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, (m) => m + BOOT);
       else html = BOOT + html;
       res.setHeader('content-type', 'text/html; charset=utf-8');
       return res.send(html);
     }
-    // CÃ²n láº¡i (JS/CSS/API JSON/streaming/SSE/áº£nh...) pipe trá»±c tiáº¿p
+    // Còn lại (JS/CSS/API JSON/streaming/SSE/ảnh...) pipe trực tiếp
     res.status(upstream.status);
     if (upstream.body) {
       const { Readable } = require('stream');
@@ -1927,11 +1927,11 @@ router.use('/classroom', rateLimit({ windowMs: 60000, max: 300 }), async (req, r
     }
   } catch (e) {
     console.error('[Classroom] Proxy error:', targetUrl, e.message);
-    res.status(502).json({ success: false, error: 'Lá»—i proxy Lá»›p Há»c AI: ' + e.message });
+    res.status(502).json({ success: false, error: 'Lỗi proxy Lớp Học AI: ' + e.message });
   }
 });
 
-// Proxy stream video (chá»‘ng CORS + SSRF) â€” copy pattern tá»« iptv/proxy
+// Proxy stream video (chống CORS + SSRF) — copy pattern từ iptv/proxy
 router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubeProxyAuth, async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'Missing url param' });
@@ -1939,18 +1939,18 @@ router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubePr
   let targetUrl;
   try {
     targetUrl = decodeURIComponent(url);
-    // P2-18: check async (literal + DNS resolve) thay vÃ¬ isPrivateHostname sync
+    // P2-18: check async (literal + DNS resolve) thay vì isPrivateHostname sync
     const check = await assertPublicUrlAsync(targetUrl);
     if (!check.ok) {
-      const code = (check.reason === 'URL khÃ´ng há»£p lá»‡' || check.reason === 'Chá»‰ cho phÃ©p http/https') ? 400 : 403;
+      const code = (check.reason === 'URL không hợp lệ' || check.reason === 'Chỉ cho phép http/https') ? 400 : 403;
       return res.status(code).json({ error: check.reason });
     }
-    // 4/10 FREE-ALL: khÃ¡ch (khÃ´ng qua authMiddleware) chá»‰ Ä‘Æ°á»£c proxy host media Ä‘Ã£ biáº¿t
+    // 4/10 FREE-ALL: khách (không qua authMiddleware) chỉ được proxy host media đã biết
     if (!req.user) {
       let host = '';
-      try { host = new URL(targetUrl).hostname; } catch (e) { /* fallthrough 400 dÆ°á»›i */ }
+      try { host = new URL(targetUrl).hostname; } catch (e) { /* fallthrough 400 dưới */ }
       if (!ytdlp.isYouTubeProxyHost(host)) {
-        return res.status(403).json({ error: 'KhÃ¡ch vÃ£ng lai chá»‰ phÃ¡t Ä‘Æ°á»£c luá»“ng YouTube (Ä‘Äƒng nháº­p Ä‘á»ƒ má»Ÿ rá»™ng).' });
+        return res.status(403).json({ error: 'Khách vãng lai chỉ phát được luồng YouTube (đăng nhập để mở rộng).' });
       }
     }
   } catch {
@@ -1959,8 +1959,8 @@ router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubePr
 
   try {
     let effectiveUrl = targetUrl;
-    // Giá»¯ Range Ä‘á»ƒ player seek Ä‘Æ°á»£c (trÆ°á»›c Ä‘Ã¢y bá» qua â†’ táº£i NGUYÃŠN video vÃ o RAM,
-    // video dÃ i trÃªn Render free dá»… OOM/502). Timeout dÃ i vÃ¬ cáº§n stream cáº£ video.
+    // Giữ Range để player seek được (trước đây bỏ qua → tải NGUYÊN video vào RAM,
+    // video dài trên Render free dễ OOM/502). Timeout dài vì cần stream cả video.
     const upstreamHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
       'Referer': 'https://www.youtube.com/',
@@ -2000,9 +2000,9 @@ router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubePr
     if (!res.getHeader('accept-ranges')) res.setHeader('Accept-Ranges', 'bytes');
     res.status(upstream.status);
 
-    // 4/10: playlist m3u (YouTube LIVE chá»‰ cÃ³ HLS, khÃ´ng cÃ³ mp4 progressive) â†’
-    // rewrite URL segment â†’ tuyá»‡t Ä‘á»‘i qua proxy nÃ y. googlevideo khÃ´ng cÃ³ CORS,
-    // trÃ¬nh duyá»‡t fetch segment trá»±c tiáº¿p bá»‹ cháº·n â€” copy pattern iptv/proxy.
+    // 4/10: playlist m3u (YouTube LIVE chỉ có HLS, không có mp4 progressive) →
+    // rewrite URL segment → tuyệt đối qua proxy này. googlevideo không có CORS,
+    // trình duyệt fetch segment trực tiếp bị chặn — copy pattern iptv/proxy.
     const _ctYt = (upstream.headers.get('content-type') || '').toLowerCase();
     if (_ctYt.includes('mpegurl') || effectiveUrl.toLowerCase().includes('/hls_playlist/') || effectiveUrl.toLowerCase().endsWith('.m3u8')) {
       let body = await upstream.text();
@@ -2010,16 +2010,16 @@ router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubePr
 
       const baseYt = effectiveUrl.substring(0, effectiveUrl.lastIndexOf('/') + 1);
       let originYt = '';
-      try { originYt = new URL(effectiveUrl).origin; } catch (e) { /* segment relative giá»¯ nguyÃªn base */ }
+      try { originYt = new URL(effectiveUrl).origin; } catch (e) { /* segment relative giữ nguyên base */ }
       const toAbsoluteYt = (u) => {
         if (/^https?:\/\//i.test(u)) return u;
         if (u.startsWith('/') && originYt) return originYt + u;
         return baseYt + u;
       };
-      // Giá»¯ ?token= cho segment con (guest auth qua allowlist host googlevideo/worker)
+      // Giữ ?token= cho segment con (guest auth qua allowlist host googlevideo/worker)
       const qsTokenYt = req.query.token ? `&token=${encodeURIComponent(req.query.token)}` : '';
-      // Segment googlevideo bá»‹ IP-lock theo IP yÃªu cáº§u â€” PHáº¢I fetch qua worker (IP nhÃ );
-      // BE proxy (IP Render) fetch trá»±c tiáº¿p sáº½ 403. Fallback BE proxy náº¿u thiáº¿u worker env.
+      // Segment googlevideo bị IP-lock theo IP yêu cầu — PHẢI fetch qua worker (IP nhà);
+      // BE proxy (IP Render) fetch trực tiếp sẽ 403. Fallback BE proxy nếu thiếu worker env.
       const workerUrlYt = (process.env.YTDLP_WORKER_URL || '').trim().replace(/\/+$/, '');
       const workerTokYt = (process.env.YTDLP_WORKER_TOKEN || '').trim();
       const toProxyYt = (u) => {
@@ -2028,7 +2028,7 @@ router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubePr
         }
         return `${req.protocol}://${req.get('host')}/api/services/youtube/proxy?url=${encodeURIComponent(toAbsoluteYt(u))}${qsTokenYt}`;
       };
-      // 1) Rewrite dÃ²ng URI thÆ°á»ng (segment, variant playlist)
+      // 1) Rewrite dòng URI thường (segment, variant playlist)
       body = body.replace(/^(?!#)([^\r\n]+)$/gm, (line) => {
         line = line.trim();
         if (!line) return line;
@@ -2057,19 +2057,19 @@ router.get('/youtube/proxy', rateLimit({ windowMs: 60000, max: 120 }), youtubePr
   }
 });
 
-// TÃ“M Táº®T VIDEO AI: táº£i audio â†’ Groq Whisper (STT) â†’ Groq LLM â†’ Markdown
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// TÃ³m táº¯t má»™t video YouTube chá»‰ báº±ng 1 cÃ¢u há»i. DÃ¢y chuyá»n:
-//   yt-dlp (audio mp3) â†’ Groq whisper-large-v3 (transcript) â†’ llama-3.3-70b (tÃ³m táº¯t VN)
-// TÃ“M Táº®T VIDEO AI: táº£i audio â†’ STT (Groq Whisper â†’ fallback Gemini) â†’ LLM (Groq â†’ fallback Gemini)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// TÃ³m táº¯t má»™t video YouTube chá»‰ báº±ng 1 cÃ¢u há»i. DÃ¢y chuyá»n:
-//   yt-dlp (audio mp3 â‰¤10 phÃºt) â†’ Groq whisper-large-v3 / Gemini (transcript) â†’ LLM (tÃ³m táº¯t VN)
-// Chá»‰ cho phÃ©p URL YouTube há»£p lá»‡ â€” cháº·n file:// (Ä‘á»c file cá»¥c bá»™!), SSRF, host ná»™i bá»™
+// TÓM TẮT VIDEO AI: tải audio → Groq Whisper (STT) → Groq LLM → Markdown
+// ─────────────────────────────────────────────────────────────────────────────
+// Tóm tắt một video YouTube chỉ bằng 1 câu hỏi. Dây chuyền:
+//   yt-dlp (audio mp3) → Groq whisper-large-v3 (transcript) → llama-3.3-70b (tóm tắt VN)
+// TÓM TẮT VIDEO AI: tải audio → STT (Groq Whisper → fallback Gemini) → LLM (Groq → fallback Gemini)
+// ─────────────────────────────────────────────────────────────────────────────
+// Tóm tắt một video YouTube chỉ bằng 1 câu hỏi. Dây chuyền:
+//   yt-dlp (audio mp3 ≤10 phút) → Groq whisper-large-v3 / Gemini (transcript) → LLM (tóm tắt VN)
+// Chỉ cho phép URL YouTube hợp lệ — chặn file:// (đọc file cục bộ!), SSRF, host nội bộ
 function isValidYouTubeUrl(url) {
   const s = String(url || '').trim();
   if (!s) return false;
-  // Video ID thuáº§n (11 kÃ½ tá»±) â€” dÃ¹ng phá»• biáº¿n trong app
+  // Video ID thuần (11 ký tự) — dùng phổ biến trong app
   if (/^[A-Za-z0-9_-]{11}$/.test(s)) return true;
   let u;
   try {
@@ -2090,18 +2090,18 @@ function isValidYouTubeUrl(url) {
 }
 
 function buildSummaryPrompt(text) {
-  return `Báº¡n lÃ  chuyÃªn gia tÃ³m táº¯t video chuyÃªn nghiá»‡p. DÆ°á»›i Ä‘Ã¢y lÃ  transcript (lá»i thoáº¡i) cá»§a má»™t video YouTube. HÃ£y tÃ³m táº¯t báº±ng TIáº¾NG VIá»†T theo Ä‘Ãºng Ä‘á»‹nh dáº¡ng Markdown sau (chá»‰ tráº£ ná»™i dung, khÃ´ng thÃªm lá»i dáº«n):
+  return `Bạn là chuyên gia tóm tắt video chuyên nghiệp. Dưới đây là transcript (lời thoại) của một video YouTube. Hãy tóm tắt bằng TIẾNG VIỆT theo đúng định dạng Markdown sau (chỉ trả nội dung, không thêm lời dẫn):
 
-# ðŸ“ TÃ³m táº¯t video
+# 📝 Tóm tắt video
 
-## ðŸŽ¯ Ã chÃ­nh
-- <3-5 gáº¡ch Ä‘áº§u dÃ²ng nÃªu ná»™i dung cá»‘t lÃµi>
+## 🎯 Ý chính
+- <3-5 gạch đầu dòng nêu nội dung cốt lõi>
 
-## ðŸ“Œ Äiá»ƒm ná»•i báº­t
-- <cÃ¡c thÃ´ng tin/quan Ä‘iá»ƒm quan trá»ng>
+## 📌 Điểm nổi bật
+- <các thông tin/quan điểm quan trọng>
 
-## ðŸ’¡ Káº¿t luáº­n / BÃ i há»c
-- <káº¿t luáº­n rÃºt ra tá»« video>
+## 💡 Kết luận / Bài học
+- <kết luận rút ra từ video>
 
 Transcript:
 """
@@ -2109,7 +2109,7 @@ ${text.slice(0, 20000)}
 """`;
 }
 
-// STT qua Groq Whisper (cÃ³ timeout 90s â€” trÃ¡nh treo vÃ´ háº¡n khi Groq báº­n)
+// STT qua Groq Whisper (có timeout 90s — tránh treo vô hạn khi Groq bận)
 async function transcribeWithGroq(groq, audioPath) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
@@ -2138,7 +2138,7 @@ async function transcribeWithGroq(groq, audioPath) {
   }
 }
 
-// Chuyá»ƒn segments -> ná»™i dung file SRT (phá»¥ Ä‘á» timestamp chuáº©n)
+// Chuyển segments -> nội dung file SRT (phụ đề timestamp chuẩn)
 function segmentsToSrt(segments) {
   if (!Array.isArray(segments) || segments.length === 0) return '';
   const fmt = (sec) => {
@@ -2154,7 +2154,7 @@ function segmentsToSrt(segments) {
   }).filter(Boolean).join('\n\n');
 }
 
-// STT qua Gemini (fallback khi Groq lá»—i/háº¿t quota)
+// STT qua Gemini (fallback khi Groq lỗi/hết quota)
 async function transcribeWithGemini(genAI, audioPath) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120000);
@@ -2166,7 +2166,7 @@ async function transcribeWithGemini(genAI, audioPath) {
         role: 'user',
         parts: [
           { inlineData: { mimeType: 'audio/mpeg', data: b64 } },
-          { text: 'HÃ£y chuyá»ƒn toÃ n bá»™ lá»i thoáº¡i trong audio nÃ y thÃ nh vÄƒn báº£n. Chá»‰ tráº£ vá» vÄƒn báº£n lá»i thoáº¡i, khÃ´ng thÃªm gÃ¬ khÃ¡c.' }
+          { text: 'Hãy chuyển toàn bộ lời thoại trong audio này thành văn bản. Chỉ trả về văn bản lời thoại, không thêm gì khác.' }
         ]
       }]
     }, { signal: controller.signal });
@@ -2176,7 +2176,7 @@ async function transcribeWithGemini(genAI, audioPath) {
   }
 }
 
-// TÃ³m táº¯t báº±ng Groq (thá»­ nhiá»u model â€” model cÃ³ thá»ƒ bá»‹ Groq gá»¡ báº¥t cá»© lÃºc nÃ o)
+// Tóm tắt bằng Groq (thử nhiều model — model có thể bị Groq gỡ bất cứ lúc nào)
 const GROQ_SUMMARY_MODELS = ['qwen/qwen3.8-27b', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'];
 async function summarizeWithGroq(groq, text) {
   if (!groq) return '';
@@ -2201,7 +2201,7 @@ async function summarizeWithGroq(groq, text) {
   return '';
 }
 
-// TÃ³m táº¯t báº±ng xkiro (náº¥c cuá»‘i â€” key trong DB, Ä‘Ã£ dÃ¹ng á»•n cho quickSummarize)
+// Tóm tắt bằng xkiro (nấc cuối — key trong DB, đã dùng ổn cho quickSummarize)
 async function summarizeWithXkiro(text) {
   try {
     const row = await new Promise((res) => db.get("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = 'xkiro' LIMIT 1", [], (err, r) => res(r)));
@@ -2228,7 +2228,7 @@ async function summarizeWithXkiro(text) {
   }
 }
 
-// TÃ³m táº¯t báº±ng Gemini (fallback)
+// Tóm tắt bằng Gemini (fallback)
 async function summarizeWithGemini(genAI, text) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60000);
@@ -2244,16 +2244,16 @@ async function summarizeWithGemini(genAI, text) {
   }
 }
 
-// FREE-ALL: tÃ³m táº¯t AI má»Ÿ cho guest (rateLimit Ä‘Ã£ cháº·n abuse)
+// FREE-ALL: tóm tắt AI mở cho guest (rateLimit đã chặn abuse)
 router.post('/youtube/summarize', async (req, res) => {
   const { url } = req.body || {};
   if (!url || !isValidYouTubeUrl(url)) {
-    return res.status(400).json({ success: false, error: 'URL/ID video khÃ´ng há»£p lá»‡ (chá»‰ há»— trá»£ YouTube).' });
+    return res.status(400).json({ success: false, error: 'URL/ID video không hợp lệ (chỉ hỗ trợ YouTube).' });
   }
 
   let audioPath = null;
   try {
-    // TÃªn file duy nháº¥t â€” trÃ¡nh Ä‘á»¥ng nhau giá»¯a 2 request Ä‘á»“ng thá»i
+    // Tên file duy nhất — tránh đụng nhau giữa 2 request đồng thời
     const outPath = path.join(tempDir, `ytsum_${Date.now()}_${Math.random().toString(36).slice(2)}`);
 
     const groq = await getGroqClient();
@@ -2261,12 +2261,12 @@ router.post('/youtube/summarize', async (req, res) => {
       return res.status(503).json({
         success: false,
         error: 'CHUA_CO_KEY',
-        message: 'Cáº§n GROQ_API_KEY trong báº£ng khoa_api Ä‘á»ƒ dÃ¹ng TÃ³m táº¯t AI.'
+        message: 'Cần GROQ_API_KEY trong bảng khoa_api để dùng Tóm tắt AI.'
       });
     }
 
-    // â”€â”€ BÆ°á»›c 0: Captions-first (manual subs qua worker /subs) â€” chuáº©n 100%,
-    // auto-captions kÃ©m Whisper trÃªn nháº¡c. CÃ³ manual subs â†’ skip download+STT.
+    // ── Bước 0: Captions-first (manual subs qua worker /subs) — chuẩn 100%,
+    // auto-captions kém Whisper trên nhạc. Có manual subs → skip download+STT.
     let videoTitle = '';
     let transcript = '';
     let sttSource = '';
@@ -2291,10 +2291,10 @@ router.post('/youtube/summarize', async (req, res) => {
       audioPath = dl && dl.file;
 
       if (!audioPath || !fs.existsSync(audioPath)) {
-        return res.status(500).json({ success: false, error: 'KhÃ´ng táº£i Ä‘Æ°á»£c audio cá»§a video. Thá»­ video khÃ¡c.' });
+        return res.status(500).json({ success: false, error: 'Không tải được audio của video. Thử video khác.' });
       }
 
-      // â”€â”€ BÆ°á»›c 1: Nháº­n diá»‡n giá»ng nÃ³i (Groq â†’ fallback Gemini) â”€â”€
+      // ── Bước 1: Nhận diện giọng nói (Groq → fallback Gemini) ──
       try {
         const groqRes = await transcribeWithGroq(groq, audioPath);
         transcript = groqRes.text;
@@ -2304,7 +2304,7 @@ router.post('/youtube/summarize', async (req, res) => {
         console.log('[YouTube] Groq STT fail, fallback Gemini:', e.message);
       }
       if (!transcript) {
-        const gemini = await getGeminiClient(); // láº¥y lazily â€” chá»‰ khi cáº§n fallback
+        const gemini = await getGeminiClient(); // lấy lazily — chỉ khi cần fallback
         if (gemini) {
           try {
             transcript = await transcribeWithGemini(gemini, audioPath);
@@ -2315,17 +2315,17 @@ router.post('/youtube/summarize', async (req, res) => {
         }
       }
       if (!transcript) {
-        return res.status(502).json({ success: false, error: 'KhÃ´ng nháº­n diá»‡n Ä‘Æ°á»£c giá»ng nÃ³i (cáº£ Groq láº«n Gemini Ä‘á»u lá»—i). Thá»­ video khÃ¡c.' });
+        return res.status(502).json({ success: false, error: 'Không nhận diện được giọng nói (cả Groq lẫn Gemini đều lỗi). Thử video khác.' });
       }
       if (!videoTitle) videoTitle = dl?.title || '';
     }
 
-    // Dá»n artifact cho Cáº¢ 2 nguá»“n (captions/STT): collapse spaces + dÃ²ng láº·p
+    // Dọn artifact cho CẢ 2 nguồn (captions/STT): collapse spaces + dòng lặp
     transcript = ytdlp.cleanTranscriptText(transcript);
     srt = ytdlp.cleanSrtArtifacts(srt);
 
-    // â”€â”€ BÆ°á»›c 2: TÃ³m táº¯t báº±ng LLM (Groq â†’ fallback Gemini) â”€â”€
-    // P1-11: summarizeWithGroq lÃ  async â†’ pháº£i await, bá»c try/catch, validate string
+    // ── Bước 2: Tóm tắt bằng LLM (Groq → fallback Gemini) ──
+    // P1-11: summarizeWithGroq là async → phải await, bọc try/catch, validate string
     let summary = '';
     try {
       summary = await summarizeWithGroq(groq, transcript);
@@ -2355,25 +2355,25 @@ router.post('/youtube/summarize', async (req, res) => {
     res.json({ success: true, title: videoTitle, transcript, summary, srt, stt_source: sttSource });
   } catch (err) {
     console.error('[YouTube] Summarize error:', err.message);
-    // Lá»—i cÃ³ nguyÃªn nhÃ¢n rÃµ (bot-check, thiáº¿u key, audio lá»—i) â†’ tráº£ tháº³ng message
-    // thay vÃ¬ 500 chung chung Ä‘á»ƒ user biáº¿t Ä‘Æ°á»ng xá»­ lÃ½.
-    const known = /^(YouTube Ä‘ang cháº·n|KhÃ´ng táº£i Ä‘Æ°á»£c audio|KhÃ´ng tÃ¬m tháº¥y file mp3|Thiáº¿u URL\/ID|Thiáº¿u Ä‘Æ°á»ng dáº«n|worker audio|ffmpeg)/.test(err.message || '');
+    // Lỗi có nguyên nhân rõ (bot-check, thiếu key, audio lỗi) → trả thẳng message
+    // thay vì 500 chung chung để user biết đường xử lý.
+    const known = /^(YouTube đang chặn|Không tải được audio|Không tìm thấy file mp3|Thiếu URL\/ID|Thiếu đường dẫn|worker audio|ffmpeg)/.test(err.message || '');
     if (known) return res.status(502).json({ success: false, error: err.message });
-    res.status(500).json({ success: false, error: 'Lá»—i tÃ³m táº¯t video. Vui lÃ²ng thá»­ láº¡i.' });
+    res.status(500).json({ success: false, error: 'Lỗi tóm tắt video. Vui lòng thử lại.' });
   } finally {
-    // Dá»n Ä‘Ãºng file cá»§a request nÃ y (khÃ´ng Ä‘á»¥ng file cá»§a request khÃ¡c)
+    // Dọn đúng file của request này (không đụng file của request khác)
     if (audioPath && fs.existsSync(audioPath)) {
       try { fs.unlinkSync(audioPath); } catch (e) { /* ignore */ }
     }
   }
 });
 
-// â”€â”€â”€ TIKTOK FEED (xem dá»c + lá»c chá»§ Ä‘á», AI nhÃ¬n hÃ¬nh tá»± lÆ°á»›t) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── TIKTOK FEED (xem dọc + lọc chủ đề, AI nhìn hình tự lướt) ───────────────
 const tiktokService = require('../services/tiktokService');
 const chatExecutor = require('../services/chatExecutor');
 
-// Feed: "DÃ nh cho báº¡n" (foryou=1, nÃªn kÃ¨m session Ä‘Äƒng nháº­p) / @user / #hashtag.
-// CÃ o lÃ¢u (tá»›i ~90s) nÃªn gá»­i nhá»‹p giá»¯ káº¿t ná»‘i má»—i 10s (proxy cáº¯t khi im láº·ng quÃ¡ lÃ¢u).
+// Feed: "Dành cho bạn" (foryou=1, nên kèm session đăng nhập) / @user / #hashtag.
+// Cào lâu (tới ~90s) nên gửi nhịp giữ kết nối mỗi 10s (proxy cắt khi im lặng quá lâu).
 router.get('/tiktok/feed', rateLimit({ windowMs: 60000, max: 20 }), async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   const giuKetNoi = setInterval(() => { try { res.write(' '); } catch (e) {} }, 10000);
@@ -2392,18 +2392,18 @@ router.get('/tiktok/feed', rateLimit({ windowMs: 60000, max: 20 }), async (req, 
     console.error('[TikTok] feed error:', (e.message || e).toString().slice(0, 200));
     if (!res.headersSent) {
       res.statusCode = 502;
-      res.end(JSON.stringify({ success: false, error: (e.message || 'TikTok feed lá»—i').toString().slice(0, 300) }));
+      res.end(JSON.stringify({ success: false, error: (e.message || 'TikTok feed lỗi').toString().slice(0, 300) }));
     } else {
-      try { res.end(JSON.stringify({ success: false, error: (e.message || 'TikTok feed lá»—i').toString().slice(0, 300) })); } catch (e2) {}
+      try { res.end(JSON.stringify({ success: false, error: (e.message || 'TikTok feed lỗi').toString().slice(0, 300) })); } catch (e2) {}
     }
   }
 });
 
-// Proxy stream playAddr (CDN TikTok cháº·n hotlink thiáº¿u Referer; FE cÅ©ng cáº§n cÃ¹ng origin cho canvas)
+// Proxy stream playAddr (CDN TikTok chặn hotlink thiếu Referer; FE cũng cần cùng origin cho canvas)
 router.get('/tiktok/stream', rateLimit({ windowMs: 60000, max: 400 }), async (req, res) => {
   const target = String(req.query.u || '');
   if (!/^https:\/\//.test(target) || !/tiktok(?:cdn|v16|v19|\.com)/i.test(target)) {
-    return res.status(400).json({ success: false, error: 'URL khÃ´ng há»£p lá»‡' });
+    return res.status(400).json({ success: false, error: 'URL không hợp lệ' });
   }
   try {
     const upstream = await fetch(target, {
@@ -2412,7 +2412,7 @@ router.get('/tiktok/stream', rateLimit({ windowMs: 60000, max: 400 }), async (re
       signal: AbortSignal.timeout(30000),
     });
     if (!upstream.ok || !upstream.body) {
-      return res.status(502).json({ success: false, error: `CDN TikTok tráº£ ${upstream.status} â€” báº¥m táº£i láº¡i feed (playAddr háº¿t háº¡n)` });
+      return res.status(502).json({ success: false, error: `CDN TikTok trả ${upstream.status} — bấm tải lại feed (playAddr hết hạn)` });
     }
     res.status(upstream.status);
     const passthrough = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
@@ -2424,19 +2424,19 @@ router.get('/tiktok/stream', rateLimit({ windowMs: 60000, max: 400 }), async (re
     const { Readable } = require('stream');
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (e) {
-    if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'stream lá»—i').toString().slice(0, 200) });
+    if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'stream lỗi').toString().slice(0, 200) });
   }
 });
 
-// ÄÆ°á»ng phÃ¡t chÃ­nh: giáº£i link qua tikwm rá»“i pipe vá» FE (CDN TikTok cháº·n IP mÃ¡y nÃ y â†’ 403).
-// Náº¿u cÃ³ session Ä‘Äƒng nháº­p + playAddr gá»‘c (u): thá»­ táº£i trá»±c tiáº¿p báº±ng cookie nick tháº­t
-// trÆ°á»›c (CDN ná»›i tay hÆ¡n), rá»›t má»›i qua tikwm.
-// FE gá»i: /tiktok/media?id=<videoId>&user=<tÃ¡c giáº£>&u=<playAddr, cÃ³ thÃ¬ tá»‘t>&session=<token>
+// Đường phát chính: giải link qua tikwm rồi pipe về FE (CDN TikTok chặn IP máy này → 403).
+// Nếu có session đăng nhập + playAddr gốc (u): thử tải trực tiếp bằng cookie nick thật
+// trước (CDN nới tay hơn), rớt mới qua tikwm.
+// FE gọi: /tiktok/media?id=<videoId>&user=<tác giả>&u=<playAddr, có thì tốt>&session=<token>
 router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req, res) => {
   const id = String(req.query.id || '').trim();
   const author = String(req.query.user || req.query.author || '').trim();
   if (!/^\d{10,25}$/.test(id)) {
-    return res.status(400).json({ success: false, error: 'Thiáº¿u id video' });
+    return res.status(400).json({ success: false, error: 'Thiếu id video' });
   }
   const playAddr = String(req.query.u || '');
   const ses = await tiktokService.getSession(req.query.session);
@@ -2452,16 +2452,16 @@ router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req
     Readable.fromWeb(upstream.body).pipe(res);
   };
   try {
-    // 1. Nick tháº­t â†’ CDN trá»±c tiáº¿p
+    // 1. Nick thật → CDN trực tiếp
     if (ses && /^https:\/\//.test(playAddr)) {
       try {
         const truc = await tiktokService.fetchDirect(playAddr, ses.cookieString, req.headers.range);
         return await pipeVe(truc);
       } catch (e) {
-        console.warn('[TikTok] media trá»±c tiáº¿p lá»—i, qua tikwm:', (e.message || e).toString().slice(0, 100));
+        console.warn('[TikTok] media trực tiếp lỗi, qua tikwm:', (e.message || e).toString().slice(0, 100));
       }
     }
-    // 2. BÃªn trung gian tikwm
+    // 2. Bên trung gian tikwm
     const entry = await tiktokService.resolvePlayUrl(id, author);
     const upstream = await fetch(entry.url, {
       headers: tiktokService.streamHeaders(req.headers.range ? { Range: req.headers.range } : {}),
@@ -2469,33 +2469,33 @@ router.get('/tiktok/media', rateLimit({ windowMs: 60000, max: 400 }), async (req
       signal: AbortSignal.timeout(45000),
     });
     if (!upstream.ok || !upstream.body) {
-      return res.status(502).json({ success: false, error: `Nguá»“n phÃ¡t tráº£ ${upstream.status} â€” thá»­ video khÃ¡c` });
+      return res.status(502).json({ success: false, error: `Nguồn phát trả ${upstream.status} — thử video khác` });
     }
     return await pipeVe(upstream);
   } catch (e) {
-    if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'media lá»—i').toString().slice(0, 200) });
+    if (!res.headersSent) res.status(502).json({ success: false, error: (e.message || 'media lỗi').toString().slice(0, 200) });
   }
 });
 
-// Táº¡o phiÃªn Ä‘Äƒng nháº­p TikTok tá»« cookie user copy (document.cookie trÃªn tiktok.com).
-// FE giá»¯ token trong localStorage, gá»­i kÃ¨m feed/media Ä‘á»ƒ lÆ°á»›t nick tháº­t.
+// Tạo phiên đăng nhập TikTok từ cookie user copy (document.cookie trên tiktok.com).
+// FE giữ token trong localStorage, gửi kèm feed/media để lướt nick thật.
 router.post('/tiktok/session', rateLimit({ windowMs: 60000, max: 30 }), async (req, res) => {
   try {
     const data = await tiktokService.createSession((req.body || {}).cookies);
     res.json({ success: true, ...data });
   } catch (e) {
-    res.status(400).json({ success: false, error: (e.message || 'session lá»—i').toString().slice(0, 200) });
+    res.status(400).json({ success: false, error: (e.message || 'session lỗi').toString().slice(0, 200) });
   }
 });
 
-// ÄÄƒng nháº­p báº±ng QR: start â†’ {loginId} (má»Ÿ browser ná»n, chá»¥p QR); FE hiá»‡n QR,
-// poll status má»—i 3s â†’ done kÃ¨m {token} phiÃªn nick tháº­t.
+// Đăng nhập bằng QR: start → {loginId} (mở browser nền, chụp QR); FE hiện QR,
+// poll status mỗi 3s → done kèm {token} phiên nick thật.
 router.post('/tiktok/qr/start', rateLimit({ windowMs: 60000, max: 120 }), async (req, res) => {
   try {
     const data = await tiktokService.startLogin();
     res.json({ success: true, ...data });
   } catch (e) {
-    res.status(502).json({ success: false, error: (e.message || 'khÃ´ng má»Ÿ Ä‘Æ°á»£c QR').toString().slice(0, 200) });
+    res.status(502).json({ success: false, error: (e.message || 'không mở được QR').toString().slice(0, 200) });
   }
 });
 router.get('/tiktok/qr/status', rateLimit({ windowMs: 60000, max: 120 }), async (req, res) => {
@@ -2504,24 +2504,24 @@ router.get('/tiktok/qr/status', rateLimit({ windowMs: 60000, max: 120 }), async 
   res.json({ success: true, ...st });
 });
 
-// AI nhÃ¬n frame â†’ video cÃ³ khá»›p chá»§ Ä‘á» user muá»‘n khÃ´ng? (vision route cá»§a modelRouter)
+// AI nhìn frame → video có khớp chủ đề user muốn không? (vision route của modelRouter)
 router.post('/tiktok/classify', rateLimit({ windowMs: 60000, max: 60 }), async (req, res) => {
   const { image, topics, caption } = req.body || {};
   if (!image || !/^data:image\/(png|jpe?g|webp);base64,/.test(String(image))) {
-    return res.status(400).json({ success: false, error: 'Thiáº¿u frame (data:image/*;base64)' });
+    return res.status(400).json({ success: false, error: 'Thiếu frame (data:image/*;base64)' });
   }
   const topicList = (Array.isArray(topics) ? topics : String(topics || '').split(/[,;\n]/))
     .map((s) => String(s).trim()).filter(Boolean).slice(0, 12);
   if (!topicList.length) {
-    return res.json({ success: true, match: true, reason: 'ChÆ°a Ä‘áº·t chá»§ Ä‘á»' });
+    return res.json({ success: true, match: true, reason: 'Chưa đặt chủ đề' });
   }
   const candidates = [
     { provider: 'gemini', model: 'models/gemini-3-flash-preview' },
     { provider: 'xkiro', model: 'mistralai/mistral-small-2603' },
     { provider: 'nvidia', model: 'google/gemma-4-31b-it' },
   ];
-  const systemPrompt = 'Báº¡n lÃ  bá»™ lá»c ná»™i dung video ngáº¯n. Chá»‰ tráº£ Ä‘Ãºng 1 dÃ²ng JSON, KHÃ”NG thÃªm chá»¯ nÃ o khÃ¡c: {"match": true|false, "reason": "tá»‘i Ä‘a 12 tá»«"}';
-  const userMsg = `![frame](${image})\nNgÆ°á»i xem CHá»ˆ muá»‘n xem cÃ¡c chá»§ Ä‘á»: ${topicList.join(', ')}.\nCaption video: ${String(caption || '(khÃ´ng cÃ³)').slice(0, 300)}.\nNhÃ¬n khung hÃ¬nh nÃ y vÃ  quyáº¿t Ä‘á»‹nh video cÃ³ thuá»™c chá»§ Ä‘á» ngÆ°á»i xem muá»‘n khÃ´ng (ná»™i dung, Ä‘á»‘i tÆ°á»£ng, bá»‘i cáº£nh). Tráº£ JSON.`;
+  const systemPrompt = 'Bạn là bộ lọc nội dung video ngắn. Chỉ trả đúng 1 dòng JSON, KHÔNG thêm chữ nào khác: {"match": true|false, "reason": "tối đa 12 từ"}';
+  const userMsg = `![frame](${image})\nNgười xem CHỈ muốn xem các chủ đề: ${topicList.join(', ')}.\nCaption video: ${String(caption || '(không có)').slice(0, 300)}.\nNhìn khung hình này và quyết định video có thuộc chủ đề người xem muốn không (nội dung, đối tượng, bối cảnh). Trả JSON.`;
   try {
     const result = await chatExecutor.callWithFallback(candidates, {
       systemPrompt,
@@ -2535,27 +2535,27 @@ router.post('/tiktok/classify', rateLimit({ windowMs: 60000, max: 60 }), async (
     const r = /"reason"\s*:\s*"([^"]*)"/i.exec(result.content);
     return res.json({
       success: true,
-      match: m ? m[1].toLowerCase() === 'true' : true, // AI parse lá»—i â†’ fail-open (giá»¯ video)
+      match: m ? m[1].toLowerCase() === 'true' : true, // AI parse lỗi → fail-open (giữ video)
       reason: r ? r[1] : String(result.content).slice(0, 60),
       provider: result.provider,
     });
   } catch (e) {
-    return res.status(502).json({ success: false, error: (e.message || 'classify lá»—i').toString().slice(0, 200) });
+    return res.status(502).json({ success: false, error: (e.message || 'classify lỗi').toString().slice(0, 200) });
   }
 });
 
 router.post('/office/generate-docx', authMiddleware, async (req, res) => {
   const { title, content } = req.body;
-  if (!content) return res.status(400).json({ error: 'Thiáº¿u ná»™i dung vÄƒn báº£n' });
-  if (content.length > 50000) return res.status(400).json({ error: 'Ná»™i dung quÃ¡ dÃ i (tá»‘i Ä‘a 50,000 kÃ½ tá»±)' });
+  if (!content) return res.status(400).json({ error: 'Thiếu nội dung văn bản' });
+  if (content.length > 50000) return res.status(400).json({ error: 'Nội dung quá dài (tối đa 50,000 ký tự)' });
 
   try {
 
-    // PhÃ¢n tÃ­ch content thÃ nh cÃ¡c Ä‘oáº¡n
+    // Phân tích content thành các đoạn
     const lines = content.split('\n').filter(l => l.trim());
     const children = [];
 
-    // TiÃªu Ä‘á» chÃ­nh
+    // Tiêu đề chính
     if (title) {
       children.push(
         new Paragraph({
@@ -2568,11 +2568,11 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
       );
     }
 
-    // Xá»­ lÃ½ tá»«ng dÃ²ng
+    // Xử lý từng dòng
     for (const line of lines) {
       const trimmed = line.trim();
       
-      // PhÃ¡t hiá»‡n table (dÃ²ng cÃ³ |)
+      // Phát hiện table (dòng có |)
       if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
         const cells = trimmed.split('|').filter(c => c.trim());
         if (cells.length > 1) {
@@ -2593,7 +2593,7 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
         }
       }
 
-      // PhÃ¡t hiá»‡n bullet (- hoáº·c *)
+      // Phát hiện bullet (- hoặc *)
       if (trimmed.match(/^[-*]\s/)) {
         children.push(
           new Paragraph({
@@ -2605,7 +2605,7 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
         continue;
       }
 
-      // PhÃ¡t hiá»‡n numbered (1., 2.,...)
+      // Phát hiện numbered (1., 2.,...)
       if (trimmed.match(/^\d+\.\s/)) {
         children.push(
           new Paragraph({
@@ -2617,7 +2617,7 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
         continue;
       }
 
-      // PhÃ¡t hiá»‡n heading (# ## ###)
+      // Phát hiện heading (# ## ###)
       const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)/);
       if (headingMatch) {
         const level = headingMatch[1].length;
@@ -2632,7 +2632,7 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
         continue;
       }
 
-      // VÄƒn báº£n thÆ°á»ng
+      // Văn bản thường
       children.push(
         new Paragraph({
           children: [new TextRun({ text: trimmed, size: 22 })],
@@ -2643,8 +2643,8 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
     }
 
     const doc = new Document({
-      title: title || 'TÃ i liá»‡u Rexi AI',
-      description: 'ÄÆ°á»£c táº¡o bá»Ÿi Rexi AI Office Generator',
+      title: title || 'Tài liệu Rexi AI',
+      description: 'Được tạo bởi Rexi AI Office Generator',
       styles: { default: { document: { run: { font: 'Times New Roman', size: 24 } } } },
       sections: [{ children, properties: { page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } } }]
     });
@@ -2661,41 +2661,41 @@ router.post('/office/generate-docx', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[Office] DOCX Error:', err.message);
-    res.status(500).json({ success: false, error: 'Lá»—i táº¡o DOCX: ' + err.message });
+    res.status(500).json({ success: false, error: 'Lỗi tạo DOCX: ' + err.message });
   }
 });
 
-// POST /api/office/generate-pptx - Táº¡o file PowerPoint (pptxgenjs)
+// POST /api/office/generate-pptx - Tạo file PowerPoint (pptxgenjs)
 router.post('/office/generate-pptx', authMiddleware, async (req, res) => {
   const { title, slides } = req.body;
   if (!slides || !Array.isArray(slides) || slides.length === 0 || slides.length > 50) {
-    return res.status(400).json({ error: 'Thiáº¿u danh sÃ¡ch slide (slides: [{title, content}])' });
+    return res.status(400).json({ error: 'Thiếu danh sách slide (slides: [{title, content}])' });
   }
 
   try {
     const pres = new PptxGenJS();
 
-    // Slide 1: TiÃªu Ä‘á»
+    // Slide 1: Tiêu đề
     const slide1 = pres.addSlide();
-    slide1.addText(title || 'BÃ i thuyáº¿t trÃ¬nh Rexi AI', { x: 0.5, y: 1, w: 9, h: 2, fontSize: 36, color: 'FFFFFF', bold: true, align: 'center' });
-    slide1.addText('ÄÆ°á»£c táº¡o bá»Ÿi Rexi AI Office Generator', { x: 0.5, y: 3.2, w: 9, h: 0.8, fontSize: 16, color: 'AAAAAA', align: 'center' });
+    slide1.addText(title || 'Bài thuyết trình Rexi AI', { x: 0.5, y: 1, w: 9, h: 2, fontSize: 36, color: 'FFFFFF', bold: true, align: 'center' });
+    slide1.addText('Được tạo bởi Rexi AI Office Generator', { x: 0.5, y: 3.2, w: 9, h: 0.8, fontSize: 16, color: 'AAAAAA', align: 'center' });
     slide1.background = { color: '1E1E2E' };
 
-    // CÃ¡c slide ná»™i dung
+    // Các slide nội dung
     for (const slide of slides) {
       const s = pres.addSlide();
       s.background = { color: '1E1E2E' };
       
-      // TiÃªu Ä‘á» slide
+      // Tiêu đề slide
       s.addText(slide.title || '', { x: 0.5, y: 0.3, w: 9, h: 0.8, fontSize: 28, color: '89B4FA', bold: true });
       
-      // Ná»™i dung
+      // Nội dung
       const contentLines = (slide.content || '').split('\n').filter(l => l.trim());
       let yPos = 1.4;
       for (const line of contentLines) {
         const trimmed = line.trim();
         if (trimmed.startsWith('- ')) {
-          s.addText('â€¢ ' + trimmed.substring(2), { x: 0.7, y: yPos, w: 8.5, h: 0.4, fontSize: 16, color: 'CDD6F4' });
+          s.addText('• ' + trimmed.substring(2), { x: 0.7, y: yPos, w: 8.5, h: 0.4, fontSize: 16, color: 'CDD6F4' });
         } else {
           s.addText(trimmed, { x: 0.5, y: yPos, w: 8.8, h: 0.5, fontSize: 16, color: 'CDD6F4' });
         }
@@ -2716,14 +2716,14 @@ router.post('/office/generate-pptx', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[Office] PPTX Error:', err.message);
-    res.status(500).json({ success: false, error: 'Lá»—i táº¡o PPTX: ' + err.message });
+    res.status(500).json({ success: false, error: 'Lỗi tạo PPTX: ' + err.message });
   }
 });
 
-// POST /api/office/process-pdf - Xá»­ lÃ½ PDF (merge, split, info)
+// POST /api/office/process-pdf - Xử lý PDF (merge, split, info)
 router.post('/office/process-pdf', authMiddleware, async (req, res) => {
   const { action, base64_pdf } = req.body;
-  if (!base64_pdf) return res.status(400).json({ error: 'Thiáº¿u file PDF (base64_pdf)' });
+  if (!base64_pdf) return res.status(400).json({ error: 'Thiếu file PDF (base64_pdf)' });
 
   try {
     const pdfBytes = Buffer.from(base64_pdf, 'base64');
@@ -2741,22 +2741,22 @@ router.post('/office/process-pdf', authMiddleware, async (req, res) => {
         creator: doc.getCreator() || 'Rexi AI PDF Processor'
       });
     } else if (action === 'extract' || action === 'extract-text') {
-      // TrÃ­ch xuáº¥t toÃ n bá»™ ná»™i dung chá»¯ trong PDF (cháº¡y CPU, khÃ´ng cáº§n GPU)
+      // Trích xuất toàn bộ nội dung chữ trong PDF (chạy CPU, không cần GPU)
       const pdf = new PDFParse({ data: pdfBytes });
       const parsed = await pdf.getText({});
       await pdf.destroy();
       let fullText = (parsed.text || '').trim();
       let ocrUsed = false;
-      // Fallback OCR: PDF áº£nh/scan (pdf-parse tráº£ rá»—ng) -> gá»i LightOnOCR local (port 8099)
+      // Fallback OCR: PDF ảnh/scan (pdf-parse trả rỗng) -> gọi LightOnOCR local (port 8099)
       if (fullText.length < 20) {
         try {
-          // DÃ¹ng FormData + Blob built-in cá»§a Node (fetch xá»­ lÃ½ native, tá»± set boundary)
+          // Dùng FormData + Blob built-in của Node (fetch xử lý native, tự set boundary)
           const form = new FormData();
           form.append('file', new Blob([Buffer.from(pdfBytes)], { type: 'application/pdf' }), 'scan.pdf');
           const ocrRes = await fetch('http://127.0.0.1:8099/ocr', {
             method: 'POST',
             body: form,
-            signal: AbortSignal.timeout(120000) // trÃ¡nh treo vÄ©nh viá»…n khi OCR server cháº­m/cháº¿t
+            signal: AbortSignal.timeout(120000) // tránh treo vĩnh viễn khi OCR server chậm/chết
           });
           if (ocrRes.ok) {
             const ocrJson = await ocrRes.json();
@@ -2784,25 +2784,25 @@ router.post('/office/process-pdf', authMiddleware, async (req, res) => {
       res.json({
         success: false,
         action: action || 'unknown',
-        error: `HÃ nh Ä‘á»™ng '${action || 'unknown'}' chÆ°a Ä‘Æ°á»£c há»— trá»£. Há»— trá»£: info, extract`
+        error: `Hành động '${action || 'unknown'}' chưa được hỗ trợ. Hỗ trợ: info, extract`
       });
     }
   } catch (err) {
     console.error('[Office] PDF Error:', err.message);
-    res.status(500).json({ success: false, error: 'Lá»—i xá»­ lÃ½ PDF: ' + err.message });
+    res.status(500).json({ success: false, error: 'Lỗi xử lý PDF: ' + err.message });
   }
 });
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// LIVE CAPTION: Nháº­n diá»‡n giá»ng nÃ³i tá»« video báº±ng Groq Whisper + Dá»‹ch Tiáº¿ng Viá»‡t
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// LIVE CAPTION: Nháº­n diá»‡n giá»ng nÃ³i tá»« video báº±ng Groq Whisper + Dá»‹ch Tiáº¿ng Viá»‡t
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE CAPTION: Nhận diện giọng nói từ video bằng Groq Whisper + Dịch Tiếng Việt
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE CAPTION: Nhận diện giọng nói từ video bằng Groq Whisper + Dịch Tiếng Việt
+// ─────────────────────────────────────────────────────────────────────────────
 const tempDir = path.join(__dirname, '..', '..', 'temp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-// I5: dá»n file temp cÅ© >1h â€” server restart/crash giá»¯a render/upload lÃ m file káº¹t láº¡i,
-// RAM 512MB trÃªn Render khÃ´ng Ä‘á»§ chá»©a rÃ¡c tÃ­ch tá»¥ (ytdl audio + render mp4 + upload)
+// I5: dọn file temp cũ >1h — server restart/crash giữa render/upload làm file kẹt lại,
+// RAM 512MB trên Render không đủ chứa rác tích tụ (ytdl audio + render mp4 + upload)
 function cleanupOldTemp() {
   const dirs = [tempDir, path.join(tempDir, 'video')];
   const now = Date.now();
@@ -2816,16 +2816,16 @@ function cleanupOldTemp() {
         const st = fs.statSync(p);
         const isRecent = now - st.mtimeMs < 60 * 60 * 1000;
         if (!isRecent) fs.rmSync(p, { recursive: true, force: true });
-      } catch (e) { /* file biáº¿n máº¥t giá»¯a chá»«ng â€” bá» qua */ }
+      } catch (e) { /* file biến mất giữa chừng — bỏ qua */ }
     }
   }
 }
 cleanupOldTemp();
 setInterval(cleanupOldTemp, 60 * 60 * 1000).unref();
 
-// Guest váº«n dÃ¹ng Phá»¥ Äá» AI Ä‘Æ°á»£c (khÃ´ng token) nhÆ°ng limit 30 req/phÃºt/IP
-// (1 ngÆ°á»i xem ~12 chunk/phÃºt) â€” chá»‘ng láº¡m dá»¥ng quota Groq Whisper.
-// LÆ°u Ã½: client guest váº«n gá»­i header "Bearer " rá»—ng â†’ coi nhÆ° khÃ´ng cÃ³ token.
+// Guest vẫn dùng Phụ Đề AI được (không token) nhưng limit 30 req/phút/IP
+// (1 người xem ~12 chunk/phút) — chống lạm dụng quota Groq Whisper.
+// Lưu ý: client guest vẫn gửi header "Bearer " rỗng → coi như không có token.
 const transcribeGuestRate = rateLimit({ windowMs: 60000, max: 30 });
 function transcribeGate(req, res, next) {
   const auth = req.headers.authorization;
@@ -2839,13 +2839,13 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
   const srcLang = req.body.lang || 'auto';
 
   if (!audioFile) {
-    return res.status(400).json({ success: false, error: 'KhÃ´ng nháº­n Ä‘Æ°á»£c file audio.' });
+    return res.status(400).json({ success: false, error: 'Không nhận được file audio.' });
   }
   const tmpPath = audioFile.path;
 
-  // P2-audit: nhiá»u client (curl, upload file láº¡) gá»­i audio vá»›i Content-Type
-  // application/octet-stream â†’ Groq tá»« chá»‘i vÃ  request rÆ¡i xuá»‘ng 500 HTML.
-  // Sniff láº¡i mimetype theo Ä‘uÃ´i file khi client khÃ´ng khai bÃ¡o Ä‘Ãºng.
+  // P2-audit: nhiều client (curl, upload file lạ) gửi audio với Content-Type
+  // application/octet-stream → Groq từ chối và request rơi xuống 500 HTML.
+  // Sniff lại mimetype theo đuôi file khi client không khai báo đúng.
   const EXT_MIME = {
     '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.webm': 'audio/webm', '.m4a': 'audio/mp4',
     '.mp4': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.oga': 'audio/ogg',
@@ -2863,12 +2863,12 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
       return res.status(503).json({
         success: false,
         error: 'CHUA_CO_KEY',
-        message: 'Cáº§n thÃªm GROQ_API_KEY vÃ o file .env hoáº·c báº£ng khoa_api Ä‘á»ƒ dÃ¹ng tÃ­nh nÄƒng Phá»¥ Äá» AI. Láº¥y key miá»…n phÃ­ táº¡i: https://console.groq.com'
+        message: 'Cần thêm GROQ_API_KEY vào file .env hoặc bảng khoa_api để dùng tính năng Phụ Đề AI. Lấy key miễn phí tại: https://console.groq.com'
       });
     }
 
-    // Gá»i Groq Whisper API Ä‘á»ƒ nháº­n diá»‡n giá»ng nÃ³i (+ timeout 60s â€” P2-20(5))
-    // Sá»­ dá»¥ng FormData Ä‘á»ƒ Ä‘áº£m báº£o Groq nháº­n Ä‘Ãºng file vá»›i metadata
+    // Gọi Groq Whisper API để nhận diện giọng nói (+ timeout 60s — P2-20(5))
+    // Sử dụng FormData để đảm bảo Groq nhận đúng file với metadata
     // Groq SDK 1.x expects an object payload, not a `form-data` instance.
     // Convert the Multer file stream with Groq.toFile() so the SDK can build
     // a compatible multipart request (this also supports browser WebM chunks).
@@ -2881,7 +2881,7 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
       model: 'whisper-large-v3',
       response_format: 'json',
       ...(srcLang !== 'auto' ? { language: srcLang } : {})
-    }), 60000, 'Nháº­n diá»‡n giá»ng nÃ³i');
+    }), 60000, 'Nhận diện giọng nói');
 
     const originalText = typeof transcription === 'string'
       ? transcription.trim()
@@ -2890,7 +2890,7 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
       return res.json({ success: true, text: '', original: '' });
     }
 
-    // Dá»‹ch sang tiáº¿ng Viá»‡t: Google (local) â†’ LLM Groq/Gemini (cloud â€” Google bá»‹ cháº·n tá»« datacenter)
+    // Dịch sang tiếng Việt: Google (local) → LLM Groq/Gemini (cloud — Google bị chặn từ datacenter)
     let vietnameseText = originalText;
     if (srcLang !== 'vi') {
       try {
@@ -2904,10 +2904,10 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
 
   } catch (err) {
     console.error('[Transcribe] Error:', err.message);
-    const isTimeout = /quÃ¡ thá»i gian/i.test(err.message || '');
-    res.status(isTimeout ? 504 : 500).json({ success: false, error: 'Lá»—i nháº­n diá»‡n giá»ng nÃ³i: ' + err.message });
+    const isTimeout = /quá thời gian/i.test(err.message || '');
+    res.status(isTimeout ? 504 : 500).json({ success: false, error: 'Lỗi nhận diện giọng nói: ' + err.message });
   } finally {
-    // P2-20(5): xÃ³a file temp TRONG finally â€” má»i Ä‘Æ°á»ng return/throw Ä‘á»u dá»n
+    // P2-20(5): xóa file temp TRONG finally — mọi đường return/throw đều dọn
     try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
   }
 });
@@ -2916,7 +2916,7 @@ router.post('/transcribe', transcribeGate, upload.single('audio'), async (req, r
 const browserStream = require('../services/browserStream');
 const browserTask = require('../services/browserTask');
 
-// Cháº¡y tÃ¡c vá»¥ dÃ i (nhiá»u bÆ°á»›c) â€” agent tá»± observe â†’ quyáº¿t Ä‘á»‹nh â†’ hÃ nh Ä‘á»™ng, liÃªn tá»¥c
+// Chạy tác vụ dài (nhiều bước) — agent tự observe → quyết định → hành động, liên tục
 router.post('/browser/task', authMiddleware, async (req, res) => {
   try {
     const { goal, maxSteps, intervalMs, model } = req.body || {};
@@ -2929,7 +2929,7 @@ router.post('/browser/task', authMiddleware, async (req, res) => {
 
 router.post('/browser/task/stop', authMiddleware, async (req, res) => {
   try {
-    res.json(browserTask.stop((req.body || {}).reason || 'NgÆ°á»i dÃ¹ng dá»«ng'));
+    res.json(browserTask.stop((req.body || {}).reason || 'Người dùng dừng'));
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -2943,7 +2943,7 @@ router.get('/browser/task', authMiddleware, async (req, res) => {
   }
 });
 
-// Äá»c mÃ n hÃ¬nh báº±ng model vision (canvas/game/Ä‘á»“ hoáº¡ khÃ´ng cÃ³ DOM text)
+// Đọc màn hình bằng model vision (canvas/game/đồ hoạ không có DOM text)
 router.post('/browser/vision', authMiddleware, async (req, res) => {
   try {
     const { prompt } = req.body || {};
@@ -2957,7 +2957,7 @@ router.post('/browser/vision', authMiddleware, async (req, res) => {
 router.post('/browser/launch', authMiddleware, async (req, res) => {
   try {
     const { url } = req.body;
-    // P2-18: cháº·n URL ná»™i bá»™ ká»ƒ cáº£ khi launch kÃ¨m URL (browserStream.navigate khÃ´ng tá»± check)
+    // P2-18: chặn URL nội bộ kể cả khi launch kèm URL (browserStream.navigate không tự check)
     if (url && url !== 'about:blank') {
       const check = await assertPublicUrlAsync(url);
       if (!check.ok) return res.status(403).json({ success: false, error: check.reason });
@@ -2972,7 +2972,7 @@ router.post('/browser/launch', authMiddleware, async (req, res) => {
 router.post('/browser/navigate', authMiddleware, async (req, res) => {
   try {
     const { url } = req.body;
-    // P2-18: browserStream.navigate() khÃ´ng check SSRF â†’ check á»Ÿ route (Ä‘Ã£ cÃ³ auth)
+    // P2-18: browserStream.navigate() không check SSRF → check ở route (đã có auth)
     const check = await assertPublicUrlAsync(url);
     if (!check.ok) return res.status(403).json({ success: false, error: check.reason });
     const result = await browserStream.navigate(url);
@@ -3022,7 +3022,7 @@ router.post('/browser/scroll', authMiddleware, async (req, res) => {
   }
 });
 
-// GET: Ä‘á»c text + viewportText + scrollY cá»§a trang hiá»‡n táº¡i (tÆ°Æ¡ng Ä‘Æ°Æ¡ng tool browser_read)
+// GET: đọc text + viewportText + scrollY của trang hiện tại (tương đương tool browser_read)
 router.get('/browser/read', authMiddleware, async (req, res) => {
   try {
     const maxChars = Number(req.query.maxChars) || 6000;
@@ -3046,9 +3046,9 @@ router.get('/browser/status', authMiddleware, (req, res) => {
   res.json(browserStream.getStatus());
 });
 
-// GET: stream frame JPEG THÃ” (binary) â€” multipart/x-mixed-replace (kiá»ƒu MJPEG).
-// Nhanh hÆ¡n SSE base64 ráº¥t nhiá»u: khÃ´ng base64 (+33%), khÃ´ng JSON stringify ~40KB/frame.
-// FE dÃ¹ng endpoint nÃ y Ä‘á»ƒ váº½; SSE chá»‰ Ä‘á»ƒ nháº­n event (step/task).
+// GET: stream frame JPEG THÔ (binary) — multipart/x-mixed-replace (kiểu MJPEG).
+// Nhanh hơn SSE base64 rất nhiều: không base64 (+33%), không JSON stringify ~40KB/frame.
+// FE dùng endpoint này để vẽ; SSE chỉ để nhận event (step/task).
 router.get('/browser/stream-frames', async (req, res) => {
   const token = req.query.token || '';
   let user = null;
@@ -3069,7 +3069,7 @@ router.get('/browser/stream-frames', async (req, res) => {
   });
   res.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
 
-  // ÄÄƒng kÃ½ vÃ o kÃªnh binary TRÆ¯á»šC khi launch â†’ launch() biáº¿t cÃ³ ngÆ°á»i xem â†’ báº­t screencast.
+  // Đăng ký vào kênh binary TRƯỚC khi launch → launch() biết có người xem → bật screencast.
   browserStream._frameSubs.add(res);
   browserStream._resetAutoClose();
 
@@ -3091,9 +3091,9 @@ router.get('/browser/stream-frames', async (req, res) => {
   res.on('close', cleanup);
 });
 
-// GET: SSE stream frames â€” thay WebSocket (Render proxy chÃ¨n WS compression RSV1/
-// fragmentation â†’ connection cháº¿t 1006 ngáº§m, self-test xÃ¡c nháº­n). HTTP thÆ°á»ng qua
-// Render + Cloudflare OK. Auth ?token= (EventSource khÃ´ng gá»­i Ä‘Æ°á»£c header).
+// GET: SSE stream frames — thay WebSocket (Render proxy chèn WS compression RSV1/
+// fragmentation → connection chết 1006 ngầm, self-test xác nhận). HTTP thường qua
+// Render + Cloudflare OK. Auth ?token= (EventSource không gửi được header).
 router.get('/browser/stream-sse', async (req, res) => {
   const token = req.query.token || '';
   let user = null;
@@ -3115,15 +3115,15 @@ router.get('/browser/stream-sse', async (req, res) => {
   res.write(`data: ${JSON.stringify({ type: 'hello', stream: 'screencast', opts: browserStream.streamOpts })}\n\n`);
   console.log('[SSE] Browser stream client connected (screencast), user:', user.id || user.email);
 
-  // Tá»± launch browser khi client káº¿t ná»‘i (náº¿u chÆ°a cÃ³)
+  // Tự launch browser khi client kết nối (nếu chưa có)
   if (!browserStream.page && !browserStream.browser) {
     browserStream.launch().catch(e => console.error('[SSE] Auto-launch error:', e.message));
   }
 
-  // Push model: server Ä‘áº©y frame qua kÃªnh nÃ y (CDP screencast), client KHÃ”NG cÃ²n poll.
+  // Push model: server đẩy frame qua kênh này (CDP screencast), client KHÔNG còn poll.
   browserStream.addSubscriber(res).catch(e => console.error('[SSE] addSubscriber:', e.message));
 
-  // Keepalive Ä‘á»ƒ proxy (Render/Cloudflare) khÃ´ng cáº¯t káº¿t ná»‘i khi trang tÄ©nh khÃ´ng cÃ³ frame.
+  // Keepalive để proxy (Render/Cloudflare) không cắt kết nối khi trang tĩnh không có frame.
   const ka = setInterval(() => {
     try { if (!res.writableEnded && !res.destroyed) res.write(': keepalive\n\n'); } catch (e) {}
   }, 15000);
@@ -3140,7 +3140,7 @@ router.get('/browser/stream-sse', async (req, res) => {
   res.on('finish', cleanup);
 });
 
-// GET: self-test WS tá»« TRONG instance qua localhost â€” tÃ¡ch thá»§ pháº¡m (server vs proxy ngoÃ i)
+// GET: self-test WS từ TRONG instance qua localhost — tách thủ phạm (server vs proxy ngoài)
 router.get('/browser/ws-selftest', authMiddleware, async (req, res) => {
   try {
     const WebSocket = require('ws');
@@ -3161,12 +3161,12 @@ router.get('/browser/ws-selftest', authMiddleware, async (req, res) => {
   }
 });
 
-// POST: AI Action (Stagehand) â€” Ä‘iá»u khiá»ƒn browser báº±ng ngÃ´n ngá»¯ tá»± nhiÃªn
+// POST: AI Action (Stagehand) — điều khiển browser bằng ngôn ngữ tự nhiên
 router.post('/browser/act', authMiddleware, async (req, res) => {
   try {
     const { instruction } = req.body;
     if (!instruction || !instruction.trim()) {
-      return res.status(400).json({ success: false, error: 'Thiáº¿u chá»‰ dáº«n (instruction)' });
+      return res.status(400).json({ success: false, error: 'Thiếu chỉ dẫn (instruction)' });
     }
     const result = await browserStream.act(instruction);
     res.json(result);
@@ -3175,7 +3175,7 @@ router.post('/browser/act', authMiddleware, async (req, res) => {
   }
 });
 
-// Cuá»™n liÃªn tá»¥c (mÆ°á»£t) â€” dÃ¹ng cho TikTok/shorts: nhá»‹p cuá»™n á»•n Ä‘á»‹nh trong N ms
+// Cuộn liên tục (mượt) — dùng cho TikTok/shorts: nhịp cuộn ổn định trong N ms
 router.post('/browser/scroll-continuous', authMiddleware, async (req, res) => {
   try {
     const { deltaX, deltaY, durationMs, intervalMs, wait, mode } = req.body || {};
@@ -3184,14 +3184,14 @@ router.post('/browser/scroll-continuous', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// Dá»«ng cuá»™n liÃªn tá»¥c Ä‘ang cháº¡y ná»n
+// Dừng cuộn liên tục đang chạy nền
 router.post('/browser/scroll-stop', authMiddleware, async (req, res) => {
   try {
     res.json(await browserStream.stopScrollContinuous());
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// POST: chá»‰nh thÃ´ng sá»‘ stream (cháº¥t lÆ°á»£ng/fps/kÃ­ch thÆ°á»›c) â€” "mÆ°á»£t hÆ¡n" hoáº·c "nháº¹ hÆ¡n"
+// POST: chỉnh thông số stream (chất lượng/fps/kích thước) — "mượt hơn" hoặc "nhẹ hơn"
 router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
   try {
     const { quality, fps, maxWidth, maxHeight, everyNthFrame, scale, viewportWidth, viewportHeight } = req.body || {};
@@ -3203,7 +3203,7 @@ router.post('/browser/stream-opts', authMiddleware, async (req, res) => {
   }
 });
 
-// Di chuá»™t liÃªn tá»¥c (hover/kÃ©o) â€” thao tÃ¡c mÆ°á»£t cho game/canvas
+// Di chuột liên tục (hover/kéo) — thao tác mượt cho game/canvas
 router.post('/browser/move', authMiddleware, async (req, res) => {
   try {
     const { x, y, steps } = req.body || {};
@@ -3212,7 +3212,7 @@ router.post('/browser/move', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// Nháº¥n/tháº£ chuá»™t rá»i (giá»¯ chuá»™t Ä‘á»ƒ kÃ©o/thao tÃ¡c game)
+// Nhấn/thả chuột rời (giữ chuột để kéo/thao tác game)
 router.post('/browser/mouse', authMiddleware, async (req, res) => {
   try {
     const { action, x, y, button } = req.body || {};
@@ -3221,9 +3221,9 @@ router.post('/browser/mouse', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// HYPERFRAMES VIDEO RENDERER â€” HTML â†’ MP4 via HyperFrames CLI
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
+// HYPERFRAMES VIDEO RENDERER — HTML → MP4 via HyperFrames CLI
+// ─────────────────────────────────────────────────────────────────────────────
 const { execSync, spawn } = require('child_process');
 const { safeExecSync } = require('../utils/safeExec');
 const ffmpegPath = require('ffmpeg-static');
@@ -3249,8 +3249,8 @@ router.get('/video/status', authMiddleware, async (req, res) => {
       chromeOk = fs.existsSync(puppeteerCache);
     } catch {}
 
-    // QA 17/9: engine render chÃ­nh giá» lÃ  Playwright + ffmpeg (videoRenderer).
-    // Kiá»ƒm tra tháº­t báº±ng cÃ¡ch launch browser thá»­, khÃ´ng Ä‘oÃ¡n theo thÆ° má»¥c cache.
+    // QA 17/9: engine render chính giờ là Playwright + ffmpeg (videoRenderer).
+    // Kiểm tra thật bằng cách launch browser thử, không đoán theo thư mục cache.
     let playwrightOk = false;
     let playwrightBrowser = null;
     let playwrightError = null;
@@ -3271,14 +3271,14 @@ router.get('/video/status', authMiddleware, async (req, res) => {
       playwright: playwrightOk,
       playwrightBrowser,
       playwrightError,
-      // QA 28/9: táº¡o video AI miá»…n phÃ­ qua HuggingFace Spaces (endpoint /generate-video),
-      // Ä‘á»™c láº­p vá»›i renderer composition (Playwright+ffmpeg) á»Ÿ trÃªn.
+      // QA 28/9: tạo video AI miễn phí qua HuggingFace Spaces (endpoint /generate-video),
+      // độc lập với renderer composition (Playwright+ffmpeg) ở trên.
       aiVideo: true,
       aiVideoProviders: [
-        'minimax-h3 (HF Inference API, 33B, textâ†’video + imageâ†’video, cáº§n HF_TOKEN)',
-        'huggingface-spaces: zeroscope-v2 (textâ†’video)',
-        'huggingface-spaces: wan2.2-14b-i2v (áº£nhâ†’video)',
-        'storyboard: ghÃ©p N cáº£nh ~3s thÃ nh video dÃ i (param scenes 1-6)'
+        'minimax-h3 (HF Inference API, 33B, text→video + image→video, cần HF_TOKEN)',
+        'huggingface-spaces: zeroscope-v2 (text→video)',
+        'huggingface-spaces: wan2.2-14b-i2v (ảnh→video)',
+        'storyboard: ghép N cảnh ~3s thành video dài (param scenes 1-6)'
       ],
       ready: ffmpegOk && playwrightOk
     });
@@ -3287,16 +3287,16 @@ router.get('/video/status', authMiddleware, async (req, res) => {
   }
 });
 
-// POST: Render HTML composition â†’ MP4
-// P2-20(6): rate-limit 3 render/giá»/user (sau auth Ä‘á»ƒ key theo user) + giá»›i háº¡n
-// duration â‰¤ 30s + width â‰¤ 1920 (chá»‘ng Ä‘á»‘t CPU/RAM báº±ng job khá»•ng lá»“).
-router.post('/video/render', authMiddleware, rateLimit({ windowMs: 3600000, max: 20, message: 'Báº¡n Ä‘Ã£ render 20 video trong giá» nÃ y. Vui lÃ²ng chá» thÃªm rá»“i thá»­ láº¡i.' }), async (req, res) => {
+// POST: Render HTML composition → MP4
+// P2-20(6): rate-limit 3 render/giờ/user (sau auth để key theo user) + giới hạn
+// duration ≤ 30s + width ≤ 1920 (chống đốt CPU/RAM bằng job khổng lồ).
+router.post('/video/render', authMiddleware, rateLimit({ windowMs: 3600000, max: 20, message: 'Bạn đã render 20 video trong giờ này. Vui lòng chờ thêm rồi thử lại.' }), async (req, res) => {
   const { html, width, height, fps, duration } = req.body;
   if (!html || !html.trim()) {
-    return res.status(400).json({ error: 'Thiáº¿u ná»™i dung HTML composition' });
+    return res.status(400).json({ error: 'Thiếu nội dung HTML composition' });
   }
   if (html.length > 500000) {
-    return res.status(400).json({ error: 'HTML quÃ¡ dÃ i (tá»‘i Ä‘a 500KB)' });
+    return res.status(400).json({ error: 'HTML quá dài (tối đa 500KB)' });
   }
   const compWidth = Math.min(Math.max(parseInt(width, 10) || 1920, 320), 1920);
   const compHeight = Math.min(Math.max(parseInt(height, 10) || 1080, 240), 1080);
@@ -3307,7 +3307,7 @@ router.post('/video/render', authMiddleware, rateLimit({ windowMs: 3600000, max:
   const outputFile = path.join(projectDir, 'output.mp4');
   const fpsArgMain = Math.min(Math.max(parseInt(fps, 10) || 30, 1), 60);
 
-  // â”€â”€â”€ OFFLOAD render náº·ng sang VIDEO WORKER local (tunnel) náº¿u cÃ³ â€” nhÆ° TTS â”€â”€â”€
+  // ─── OFFLOAD render nặng sang VIDEO WORKER local (tunnel) nếu có — như TTS ───
   const workerUrl = (process.env.VIDEO_WORKER_URL || '').trim().replace(/\/$/, '');
   if (workerUrl) {
     try {
@@ -3319,23 +3319,23 @@ router.post('/video/render', authMiddleware, rateLimit({ windowMs: 3600000, max:
       });
       const data = await wRes.json();
       if (data && data.success && data.video) {
-        console.log('[Video Render] worker OK â€”', Math.round((data.size || 0) / 1024), 'KB');
+        console.log('[Video Render] worker OK —', Math.round((data.size || 0) / 1024), 'KB');
         return res.json({ success: true, video: data.video, format: 'mp4', size: data.size, width: compWidth, height: compHeight, duration: compDuration, fps: fpsArgMain, frames: data.frames, engine: 'worker', renderId });
       }
-      console.warn('[Video Render] worker lá»—i â†’ fallback local:', data && data.error);
+      console.warn('[Video Render] worker lỗi → fallback local:', data && data.error);
     } catch (eW) {
-      console.warn('[Video Render] worker exception â†’ fallback local:', eW.message);
+      console.warn('[Video Render] worker exception → fallback local:', eW.message);
     }
   }
 
-  // â”€â”€â”€ ÄÆ¯á»œNG CHÃNH (QA 17/9): renderer Playwright + ffmpeg cá»§a mÃ¬nh â”€â”€â”€
-  // `hyperframes render` cáº§n browser riÃªng vÃ  cháº¿t á»Ÿ phase capture (Network.enable timeout).
+  // ─── ĐƯỜNG CHÍNH (QA 17/9): renderer Playwright + ffmpeg của mình ───
+  // `hyperframes render` cần browser riêng và chết ở phase capture (Network.enable timeout).
   if (videoRenderer.isAvailable()) {
     try {
       const out = await videoRenderer.renderComposition({
         html, width: compWidth, height: compHeight, fps: fpsArgMain, duration: compDuration,
       });
-      console.log(`[Video Render] playwright OK â€” ${out.frames} frames / ${(out.ms / 1000).toFixed(1)}s (${out.browser})`);
+      console.log(`[Video Render] playwright OK — ${out.frames} frames / ${(out.ms / 1000).toFixed(1)}s (${out.browser})`);
       return res.json({
         success: true,
         video: out.buffer.toString('base64'),
@@ -3351,7 +3351,7 @@ router.post('/video/render', authMiddleware, rateLimit({ windowMs: 3600000, max:
         renderId,
       });
     } catch (eRender) {
-      console.error('[Video Render] playwright engine lá»—i â†’ thá»­ hyperframes:', eRender.message);
+      console.error('[Video Render] playwright engine lỗi → thử hyperframes:', eRender.message);
     }
   }
 
@@ -3360,12 +3360,12 @@ router.post('/video/render', authMiddleware, rateLimit({ windowMs: 3600000, max:
     fs.mkdirSync(projectDir, { recursive: true });
 
     // Write index.html composition (HyperFrames compatible)
-    // (compWidth/compHeight/compDuration Ä‘Ã£ clamp á»Ÿ Ä‘áº§u route â€” P2-20(6))
+    // (compWidth/compHeight/compDuration đã clamp ở đầu route — P2-20(6))
     const compId = 'main';
-    // QA 17/9: hyperframes lint bÃ¡o missing_gsap_script vÃ¬ <script src> cá»§a template
-    // náº±m trong <body>; Ä‘á»“ng thá»i timeline_id_mismatch vÃ¬ template tá»± Ä‘Äƒng kÃ½
-    // window.__timelines['<id-template>'] trong khi composition id lÃ  'main'.
-    // â†’ hoist script CDN (https) lÃªn <head> vÃ  gÃ¡n láº¡i timeline cho 'main'.
+    // QA 17/9: hyperframes lint báo missing_gsap_script vì <script src> của template
+    // nằm trong <body>; đồng thời timeline_id_mismatch vì template tự đăng ký
+    // window.__timelines['<id-template>'] trong khi composition id là 'main'.
+    // → hoist script CDN (https) lên <head> và gán lại timeline cho 'main'.
     let bodyHtml = html;
     const hoisted = [];
     bodyHtml = html.replace(/<script\s+src="(https:\/\/[^"\s>]+)"\s*>\s*<\/script>/gi, (m, src) => {
@@ -3400,12 +3400,12 @@ ${headScripts}
     fs.writeFileSync(path.join(projectDir, 'index.html'), compositionHtml, 'utf8');
 
     // Build render command
-    // fps tá»« client pháº£i lÃ  sá»‘ nguyÃªn 1-60 (spawn shell:true ná»‘i chuá»—i â†’ cháº·n command injection)
+    // fps từ client phải là số nguyên 1-60 (spawn shell:true nối chuỗi → chặn command injection)
     const fpsArg = Math.min(Math.max(parseInt(fps, 10) || 30, 1), 60);
 
     // Set FFmpeg/FFprobe path in env for hyperframes
     const env = { ...process.env };
-    // FIX PROD: bá» Ä‘Æ°á»ng dáº«n Windows cá»©ng â€” dÃ¹ng ffmpeg-static (npm) + path.delimiter (; trÃªn Windows, : trÃªn Linux/Render)
+    // FIX PROD: bỏ đường dẫn Windows cứng — dùng ffmpeg-static (npm) + path.delimiter (; trên Windows, : trên Linux/Render)
     const ffmpegDir = ffmpegPath ? path.dirname(ffmpegPath) : '';
     env.FFMPEG_PATH = ffmpegPath || '';
     env.PATH = ffmpegDir ? `${ffmpegDir}${path.delimiter}${env.PATH || ''}` : env.PATH;
@@ -3472,8 +3472,8 @@ ${headScripts}
     console.error('[Video Render] Error:', err.message);
     res.status(500).json({
       success: false,
-      error: 'Lá»—i render video: ' + err.message,
-      note: 'Cáº§n cÃ i FFmpeg vÃ  Chrome/Puppeteer. Cháº¡y: npx hyperframes doctor'
+      error: 'Lỗi render video: ' + err.message,
+      note: 'Cần cài FFmpeg và Chrome/Puppeteer. Chạy: npx hyperframes doctor'
     });
   }
 });
@@ -3481,7 +3481,7 @@ ${headScripts}
 // POST: Preview HTML composition (return HTML for iframe preview)
 router.post('/video/preview', authMiddleware, (req, res) => {
   const { html, width, height } = req.body;
-  if (!html) return res.status(400).json({ error: 'Thiáº¿u HTML' });
+  if (!html) return res.status(400).json({ error: 'Thiếu HTML' });
 
   const previewHtml = `<!DOCTYPE html>
 <html lang="vi">
@@ -3503,7 +3503,7 @@ ${html}
 // POST: Save composition to workspace for later editing
 router.post('/video/save', authMiddleware, (req, res) => {
   const { html, name } = req.body;
-  if (!html) return res.status(400).json({ error: 'Thiáº¿u HTML' });
+  if (!html) return res.status(400).json({ error: 'Thiếu HTML' });
 
   const safeName = (name || `composition_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
   const saveDir = path.join(__dirname, '..', '..', 'temp', 'video', 'compositions');
@@ -3516,25 +3516,25 @@ router.post('/video/save', authMiddleware, (req, res) => {
 });
 
 
-// â”€â”€â”€ VIDEO AI MIá»„N PHÃ (HuggingFace Spaces â€” Gradio API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// QA 28/9: kiá»ƒm chá»©ng tháº­t báº±ng HTTP + magic bytes â€” 2 Space cÃ´ng khai tráº£ MP4
-// (magic `ftyp`), KHÃ”NG cáº§n key, KHÃ”NG tá»‘n tiá»n:
-//   Â· hysts/zeroscope-v2               â†’ textâ†’video (model zeroscope-v2, ~24 frame)
-//   Â· observantdistressed/wan2-2-i2v-v3 â†’ áº£nhâ†’video (Wan 2.2 14B I2V, cháº¥t lÆ°á»£ng cao)
-// Space free nhÆ°ng xáº¿p hÃ ng (queue) nÃªn cÃ³ thá»ƒ cháº­m; lá»—i/timeout thÃ¬ tráº£
-// {success:false} Ä‘á»ƒ nÆ¡i gá»i tá»± xá»­ lÃ½. KHÃ”NG Ä‘á»¥ng renderer Playwright/ffmpeg.
+// ─── VIDEO AI MIỄN PHÍ (HuggingFace Spaces — Gradio API) ───────────
+// QA 28/9: kiểm chứng thật bằng HTTP + magic bytes — 2 Space công khai trả MP4
+// (magic `ftyp`), KHÔNG cần key, KHÔNG tốn tiền:
+//   · hysts/zeroscope-v2               → text→video (model zeroscope-v2, ~24 frame)
+//   · observantdistressed/wan2-2-i2v-v3 → ảnh→video (Wan 2.2 14B I2V, chất lượng cao)
+// Space free nhưng xếp hàng (queue) nên có thể chậm; lỗi/timeout thì trả
+// {success:false} để nơi gọi tự xử lý. KHÔNG đụng renderer Playwright/ffmpeg.
 const HF_VIDEO_T2V = { host: 'https://hysts-zeroscope-v2.hf.space', fn: '/run' };
 const HF_VIDEO_I2V = { host: 'https://observantdistressed-wan2-2-i2v-v3.hf.space', fn: '/generate_video' };
 
-// â”€â”€â”€ MiniMax H3 (Hugging Face Inference API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── MiniMax H3 (Hugging Face Inference API) ───────────
 // Model: MiniMaxAI/MiniMax-H3 (33B, Image-Text-to-Video)
-// YÃªu cáº§u: HF_TOKEN (env) cÃ³ quyá»n inference. Free tier: ~30 req/hr.
+// Yêu cầu: HF_TOKEN (env) có quyền inference. Free tier: ~30 req/hr.
 // Endpoint: https://api-inference.huggingface.co/models/MiniMaxAI/MiniMax-H3
 // Input: { inputs: "prompt", parameters: { num_frames: 24, fps: 8, ... } }
 // Returns: video bytes (MP4)
 async function generateVideoMiniMaxH3(prompt, imageUrl) {
   const token = (process.env.HF_TOKEN || '').trim();
-  if (!token) return { success: false, error: 'ChÆ°a cáº¥u hÃ¬nh HF_TOKEN cho MiniMax-H3' };
+  if (!token) return { success: false, error: 'Chưa cấu hình HF_TOKEN cho MiniMax-H3' };
 
   try {
     const payload = {
@@ -3546,7 +3546,7 @@ async function generateVideoMiniMaxH3(prompt, imageUrl) {
         num_inference_steps: 25,
       }
     };
-    // Náº¿u cÃ³ image_url â†’ image-to-video (MiniMax-H3 há»— trá»£ I2V)
+    // Nếu có image_url → image-to-video (MiniMax-H3 hỗ trợ I2V)
     if (imageUrl && imageUrl.trim()) {
       payload.image = imageUrl.trim();
     }
@@ -3555,7 +3555,7 @@ async function generateVideoMiniMaxH3(prompt, imageUrl) {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(180000) // 3 phÃºt
+      signal: AbortSignal.timeout(180000) // 3 phút
     });
 
     if (!r.ok) {
@@ -3571,18 +3571,18 @@ async function generateVideoMiniMaxH3(prompt, imageUrl) {
     const contentType = r.headers.get('content-type') || '';
     if (!contentType.startsWith('video/')) {
       const t = await r.text().catch(() => '');
-      return { success: false, error: `MiniMax-H3 khÃ´ng tráº£ video: ${contentType} - ${String(t).slice(0, 200)}` };
+      return { success: false, error: `MiniMax-H3 không trả video: ${contentType} - ${String(t).slice(0, 200)}` };
     }
 
     const buf = Buffer.from(await r.arrayBuffer());
-    if (!buf.length) return { success: false, error: 'MiniMax-H3 tráº£ video rá»—ng' };
+    if (!buf.length) return { success: false, error: 'MiniMax-H3 trả video rỗng' };
 
     // Verify MP4 magic bytes
     const isMp4 = buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70;
     if (!isMp4) {
       // Try to detect if it's webm
       const isWebm = buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
-      if (!isWebm) return { success: false, error: 'Dá»¯ liá»‡u MiniMax-H3 khÃ´ng pháº£i video há»£p lá»‡' };
+      if (!isWebm) return { success: false, error: 'Dữ liệu MiniMax-H3 không phải video hợp lệ' };
     }
 
     return { success: true, video: `data:${contentType};base64,${buf.toString('base64')}`, mimeType: contentType, provider: 'minimax-h3', bytes: buf.length };
@@ -3591,14 +3591,14 @@ async function generateVideoMiniMaxH3(prompt, imageUrl) {
     return { success: false, error: e.message };
   }
 }
-// Cloudflare trÆ°á»›c má»™t sá»‘ Space cháº·n UA láº¡ â†’ dÃ¹ng UA trÃ¬nh duyá»‡t cho cháº¯c.
+// Cloudflare trước một số Space chặn UA lạ → dùng UA trình duyệt cho chắc.
 const HF_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-// Gá»i Gradio 5: POST /gradio_api/call/<fn> â†’ event_id, rá»“i GET SSE .../<event_id>
-// Ä‘á»ƒ láº¥y URL file. Gradio tráº£ SSE dáº¡ng `event: ...\ndata: ...`.
+// Gọi Gradio 5: POST /gradio_api/call/<fn> → event_id, rồi GET SSE .../<event_id>
+// để lấy URL file. Gradio trả SSE dạng `event: ...\ndata: ...`.
 async function gradioCall(host, fn, data, timeoutMs) {
-  // HF_TOKEN (env, Render Ä‘Ã£ set) nÃ¢ng quota ZeroGPU lÃªn má»©c tÃ i khoáº£n â€” khÃ´ng cÃ³ token
-  // thÃ¬ ZeroGPU chá»‰ cho ~60s/IP rá»“i bÃ¡o "quota exceeded" cho má»i request.
+  // HF_TOKEN (env, Render đã set) nâng quota ZeroGPU lên mức tài khoản — không có token
+  // thì ZeroGPU chỉ cho ~60s/IP rồi báo "quota exceeded" cho mọi request.
   const hfTok = (process.env.HF_TOKEN || '').trim();
   const auth = hfTok ? { Authorization: `Bearer ${hfTok}` } : {};
   const hdrs = { 'Content-Type': 'application/json', 'User-Agent': HF_UA, Origin: host, Referer: host + '/', ...auth };
@@ -3608,7 +3608,7 @@ async function gradioCall(host, fn, data, timeoutMs) {
   if (!post.ok) throw new Error(`Gradio POST HTTP ${post.status}`);
   const j = await post.json().catch(() => null);
   const eventId = j && j.event_id;
-  if (!eventId) throw new Error('Gradio khÃ´ng tráº£ event_id');
+  if (!eventId) throw new Error('Gradio không trả event_id');
   const stream = await fetch(`${host}/gradio_api/call${fn}/${eventId}`, {
     headers: { 'User-Agent': HF_UA, Accept: 'text/event-stream', Origin: host, Referer: host + '/', ...auth },
     signal: AbortSignal.timeout(timeoutMs)
@@ -3624,32 +3624,32 @@ async function gradioCall(host, fn, data, timeoutMs) {
     const raw = line.slice(5).trim();
     if (!raw || raw === 'null') continue;
     let parsed;
-    try { parsed = JSON.parse(raw); } catch (e) { continue; } // heartbeat / máº£nh khÃ¡c
+    try { parsed = JSON.parse(raw); } catch (e) { continue; } // heartbeat / mảnh khác
     if (curEvent === 'error') { errMsg = String(parsed && (parsed.error || parsed.message) || raw).slice(0, 200); continue; }
     const m = JSON.stringify(parsed).match(/https?:\/\/[^"\\]+\.mp4/);
-    if (m) videoUrl = m[0]; // báº£n ghi `complete` cuá»‘i cÃ¹ng lÃ  káº¿t quáº£
+    if (m) videoUrl = m[0]; // bản ghi `complete` cuối cùng là kết quả
   }
-  if (!videoUrl) throw new Error(errMsg ? `Space lá»—i: ${errMsg}` : 'Gradio khÃ´ng tráº£ URL video (.mp4)');
+  if (!videoUrl) throw new Error(errMsg ? `Space lỗi: ${errMsg}` : 'Gradio không trả URL video (.mp4)');
   return videoUrl;
 }
 
-// Táº£i MP4 tá»« URL Space â†’ Buffer + xÃ¡c thá»±c magic bytes.
+// Tải MP4 từ URL Space → Buffer + xác thực magic bytes.
 async function fetchVideoBuffer(url) {
   const dl = await fetch(url, { headers: { 'User-Agent': HF_UA }, signal: AbortSignal.timeout(120000) });
-  if (!dl.ok) throw new Error(`Táº£i MP4 HTTP ${dl.status}`);
+  if (!dl.ok) throw new Error(`Tải MP4 HTTP ${dl.status}`);
   const buf = Buffer.from(await dl.arrayBuffer());
-  if (!buf.length) throw new Error('Video tráº£ vá» rá»—ng');
-  // magic bytes: MP4 cÃ³ 'ftyp' á»Ÿ offset 4; WebM báº¯t Ä‘áº§u báº±ng EBML 1A 45 DF A3.
+  if (!buf.length) throw new Error('Video trả về rỗng');
+  // magic bytes: MP4 có 'ftyp' ở offset 4; WebM bắt đầu bằng EBML 1A 45 DF A3.
   const isMp4 = buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70;
   const isWebm = buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
-  if (!isMp4 && !isWebm) throw new Error('Dá»¯ liá»‡u táº£i vá» khÃ´ng pháº£i video');
+  if (!isMp4 && !isWebm) throw new Error('Dữ liệu tải về không phải video');
   return { buf, mime: isMp4 ? 'video/mp4' : 'video/webm' };
 }
 
-// prompt â†’ buffer video (HuggingFace Spaces, miá»…n phÃ­ nhÆ°ng cÃ³ thá»ƒ xáº¿p hÃ ng/cháº­p chá»n).
-// CÃ³ image_url â†’ thá»­ Wan 2.2 I2V trÆ°á»›c; lá»—i thÃ¬ tá»± rÆ¡i vá» zeroscope T2V Ä‘á»ƒ váº«n cÃ³ video.
-// Storyboard mode gá»i hÃ m nÃ y cho Tá»ªNG cáº£nh (khÃ´ng kÃ¨m image_url â€” trÃ¡nh trá»™n resolution
-// giá»¯a wan-i2v vÃ  zeroscope lÃ m concat ffmpeg vá»¡).
+// prompt → buffer video (HuggingFace Spaces, miễn phí nhưng có thể xếp hàng/chập chờn).
+// Có image_url → thử Wan 2.2 I2V trước; lỗi thì tự rơi về zeroscope T2V để vẫn có video.
+// Storyboard mode gọi hàm này cho TỪNG cảnh (không kèm image_url — tránh trộn resolution
+// giữa wan-i2v và zeroscope làm concat ffmpeg vỡ).
 async function generateVideoBufferHF(prompt, imageUrl) {
   const p = String(prompt || '').slice(0, 800);
   let lastErr = '';
@@ -3662,7 +3662,7 @@ async function generateVideoBufferHF(prompt, imageUrl) {
       const { buf, mime } = await fetchVideoBuffer(url);
       return { buf, mime, provider: 'hf-wan2.2-i2v' };
     } catch (e) {
-      console.log('[generate-video] Wan I2V lá»—i â†’ rÆ¡i vá» zeroscope T2V:', e.message);
+      console.log('[generate-video] Wan I2V lỗi → rơi về zeroscope T2V:', e.message);
       lastErr = e.message;
     }
   }
@@ -3676,7 +3676,7 @@ async function generateVideoBufferHF(prompt, imageUrl) {
   }
 }
 
-// Tráº£ vá» cÃ¹ng dáº¡ng vá»›i generateImage*: {success, video:"data:<mime>;base64,...", mimeType, provider}.
+// Trả về cùng dạng với generateImage*: {success, video:"data:<mime>;base64,...", mimeType, provider}.
 async function generateVideoHF(prompt, imageUrl) {
   try {
     const { buf, mime, provider } = await generateVideoBufferHF(prompt, imageUrl);
@@ -3687,14 +3687,14 @@ async function generateVideoHF(prompt, imageUrl) {
   }
 }
 
-// â”€â”€â”€ STORYBOARD MODE (29/9): video DÃ€I tá»« model free chá»‰ sinh Ä‘Æ°á»£c ~3s/cáº£nh â”€â”€â”€
-// â†’ chia truyá»‡n thÃ nh N prompt cáº£nh, sinh tá»«ng clip rá»“i ghÃ©p báº±ng ffmpeg.
-// Chia cáº£nh báº±ng Groq free (key env GROQ_API_KEY hoáº·c DB khoa_api 'groq'),
-// lá»—i/thiáº¿u key thÃ¬ rÆ¡i vá» tÃ¡ch cÃ¢u thá»§ cÃ´ng â€” luÃ´n tráº£ Ä‘á»§ N prompt.
+// ─── STORYBOARD MODE (29/9): video DÀI từ model free chỉ sinh được ~3s/cảnh ───
+// → chia truyện thành N prompt cảnh, sinh từng clip rồi ghép bằng ffmpeg.
+// Chia cảnh bằng Groq free (key env GROQ_API_KEY hoặc DB khoa_api 'groq'),
+// lỗi/thiếu key thì rơi về tách câu thủ công — luôn trả đủ N prompt.
 async function storyboardScenes(prompt, n) {
   const story = String(prompt || '').slice(0, 1200);
   const fallback = () => {
-    const sents = story.split(/(?<=[.!?â€¦])\s+/).map(s => s.trim()).filter(Boolean);
+    const sents = story.split(/(?<=[.!?…])\s+/).map(s => s.trim()).filter(Boolean);
     if (!sents.length) return Array.from({ length: n }, () => story);
     const out = [];
     for (let i = 0; i < n; i++) out.push(sents[i % sents.length]);
@@ -3736,13 +3736,13 @@ async function storyboardScenes(prompt, n) {
     while (scenes.length < n) scenes.push(scenes[scenes.length - 1]);
     return scenes.slice(0, n);
   } catch (e) {
-    console.log('[storyboard] Groq split lá»—i â†’ tÃ¡ch cÃ¢u thá»§ cÃ´ng:', e.message);
+    console.log('[storyboard] Groq split lỗi → tách câu thủ công:', e.message);
     return fallback();
   }
 }
 
-// GhÃ©p N buffer MP4 (cÃ¹ng model â†’ cÃ¹ng codec/resolution) thÃ nh 1 file.
-// Re-encode libx264 + -r 24 cho Ä‘á»“ng bá»™ timestamp â€” Ä‘Ã£ test báº±ng tay 29/9.
+// Ghép N buffer MP4 (cùng model → cùng codec/resolution) thành 1 file.
+// Re-encode libx264 + -r 24 cho đồng bộ timestamp — đã test bằng tay 29/9.
 function stitchClips(buffers) {
   return new Promise((resolve, reject) => {
     const dir = fs.mkdtempSync(path.join(videoTempDir, 'story_'));
@@ -3770,31 +3770,31 @@ function stitchClips(buffers) {
   });
 }
 
-// POST: táº¡o video AI miá»…n phÃ­ tá»« prompt (vÃ  tuá»³ chá»n áº£nh nguá»“n).
-// Thá»© tá»± Æ°u tiÃªn: MiniMax-H3 (HF Inference API, cáº§n HF_TOKEN) â†’ HF Spaces (zeroscope/wan2.2).
-// Body: { prompt, image_url?, scenes? (1-6), prompts? ([cáº£nh 1, cáº£nh 2...]) }.
-// scenes > 1 (hoáº·c gá»­i máº£ng prompts) â†’ storyboard mode: Groq chia truyá»‡n thÃ nh
-// cÃ¡c cáº£nh â†’ sinh tá»«ng clip ~3s â†’ ghÃ©p ffmpeg thÃ nh 1 video dÃ i.
-router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, max: 10, message: 'Báº¡n Ä‘Ã£ táº¡o 10 video trong giá» nÃ y. Vui lÃ²ng chá» thÃªm rá»“i thá»­ láº¡i.' }), async (req, res) => {
+// POST: tạo video AI miễn phí từ prompt (và tuỳ chọn ảnh nguồn).
+// Thứ tự ưu tiên: MiniMax-H3 (HF Inference API, cần HF_TOKEN) → HF Spaces (zeroscope/wan2.2).
+// Body: { prompt, image_url?, scenes? (1-6), prompts? ([cảnh 1, cảnh 2...]) }.
+// scenes > 1 (hoặc gửi mảng prompts) → storyboard mode: Groq chia truyện thành
+// các cảnh → sinh từng clip ~3s → ghép ffmpeg thành 1 video dài.
+router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, max: 10, message: 'Bạn đã tạo 10 video trong giờ này. Vui lòng chờ thêm rồi thử lại.' }), async (req, res) => {
   const { prompt, image_url } = req.body || {};
   const reqScenes = Math.min(Math.max(parseInt((req.body || {}).scenes, 10) || 1, 1), 6);
   const promptsArr = Array.isArray((req.body || {}).prompts)
     ? (req.body || {}).prompts.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim().slice(0, 800)).slice(0, 6)
     : null;
   if ((!prompt || !prompt.trim()) && !image_url && !(promptsArr && promptsArr.length)) {
-    return res.json({ success: false, error: 'Vui lÃ²ng nháº­p mÃ´ táº£ video (hoáº·c áº£nh nguá»“n).' });
+    return res.json({ success: false, error: 'Vui lòng nhập mô tả video (hoặc ảnh nguồn).' });
   }
   const n = promptsArr && promptsArr.length > 1 ? Math.min(promptsArr.length, 6) : reqScenes;
 
-  // Helper: thá»­ MiniMax-H3 trÆ°á»›c, lá»—i thÃ¬ rÆ¡i vá» HF Spaces
+  // Helper: thử MiniMax-H3 trước, lỗi thì rơi về HF Spaces
   async function tryGenerateVideo(p, img) {
     const mm = await generateVideoMiniMaxH3(p, img);
     if (mm.success) return mm;
-    console.log('[generate-video] MiniMax-H3 fail â†’ fallback HF Spaces:', mm.error);
+    console.log('[generate-video] MiniMax-H3 fail → fallback HF Spaces:', mm.error);
     return generateVideoHF(p, img);
   }
 
-  // Helper cho storyboard mode (buffer thÃ´ Ä‘á»ƒ stitch)
+  // Helper cho storyboard mode (buffer thô để stitch)
   async function tryGenerateVideoBuffer(p) {
     const mm = await generateVideoMiniMaxH3(p);
     if (mm.success) {
@@ -3802,7 +3802,7 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
       const base64 = mm.video.split(',')[1];
       return { buf: Buffer.from(base64, 'base64'), mime: mm.mimeType, provider: mm.provider };
     }
-    console.log('[generate-video] MiniMax-H3 buffer fail â†’ fallback HF Spaces:', mm.error);
+    console.log('[generate-video] MiniMax-H3 buffer fail → fallback HF Spaces:', mm.error);
     return generateVideoBufferHF(p);
   }
 
@@ -3810,7 +3810,7 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
     const out = await tryGenerateVideo(prompt, image_url);
     return res.json(out);
   }
-  // â”€â”€â”€ Storyboard: video dÃ i ~3s x N cáº£nh â”€â”€â”€
+  // ─── Storyboard: video dài ~3s x N cảnh ───
   const sceneList = promptsArr && promptsArr.length > 1 ? promptsArr : await storyboardScenes(prompt, n);
   const results = [];
   const errs = [];
@@ -3818,10 +3818,10 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
     try {
       const r = await tryGenerateVideoBuffer(sceneList[i]);
       results.push(r);
-    } catch (e) { errs.push(`cáº£nh ${i + 1}: ${String(e.message).slice(0, 120)}`); }
+    } catch (e) { errs.push(`cảnh ${i + 1}: ${String(e.message).slice(0, 120)}`); }
   }
   if (!results.length) {
-    return res.json({ success: false, error: 'Táº¥t cáº£ cáº£nh Ä‘á»u lá»—i â€” ' + errs.join(' | ').slice(0, 300) });
+    return res.json({ success: false, error: 'Tất cả cảnh đều lỗi — ' + errs.join(' | ').slice(0, 300) });
   }
   let buf;
   let provider = results[0].provider;
@@ -3832,9 +3832,9 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
       buf = await stitchClips(results.map(r => r.buf));
       provider += '-story';
     } catch (e) {
-      console.log('[generate-video] ghÃ©p cáº£nh lá»—i â†’ tráº£ cáº£nh Ä‘áº§u:', e.message);
+      console.log('[generate-video] ghép cảnh lỗi → trả cảnh đầu:', e.message);
       buf = results[0].buf;
-      errs.push('ghÃ©p lá»—i: ' + String(e.message).slice(0, 120));
+      errs.push('ghép lỗi: ' + String(e.message).slice(0, 120));
     }
   }
   res.json({
@@ -3852,24 +3852,24 @@ router.post('/generate-video', authMiddleware, rateLimit({ windowMs: 3600000, ma
 });
 
 
-// â”€â”€â”€ Táº O áº¢NH AI (Gemini Image) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€â”€ Provider áº£nh Dá»° PHÃ’NG miá»…n phÃ­ (khÃ´ng cáº§n API key) â”€â”€â”€
-// QA 17/9: quota Gemini cáº¡n lÃ  tÃ­nh nÄƒng táº¡o áº£nh cháº¿t háº³n. Pollinations (Flux)
-// tráº£ áº£nh trá»±c tiáº¿p qua URL, khÃ´ng cáº§n key â†’ dÃ¹ng lÃ m Ä‘Æ°á»ng lui cho /generate-image.
-// QA 28/9: thÃªm HuggingFace free inference (SD3-medium, hf-inference provider) â€”
-// free tier, cáº§n env HF_TOKEN (token cÃ³ quyá»n `inference`). Æ¯u tiÃªn trÆ°á»›c pollinations.
-// â”€â”€â”€ xKiro image generation (SenseNova U1.5 Lite) â€” async job API â”€â”€â”€
-// QA 28/9: xKiro POST /v1/images/generations â†’ 202 job â†’ GET /v1/images/generations/{id}
-// tá»›i status=succeeded â†’ data[0].url (cdn.xkiro.com). Key Ä‘á»c tá»« DB (khoa_api, 'xkiro').
+// ─── TẠO ẢNH AI (Gemini Image) ─────────────────────────────────
+// ─── Provider ảnh DỰ PHÒNG miễn phí (không cần API key) ───
+// QA 17/9: quota Gemini cạn là tính năng tạo ảnh chết hẳn. Pollinations (Flux)
+// trả ảnh trực tiếp qua URL, không cần key → dùng làm đường lui cho /generate-image.
+// QA 28/9: thêm HuggingFace free inference (SD3-medium, hf-inference provider) —
+// free tier, cần env HF_TOKEN (token có quyền `inference`). Ưu tiên trước pollinations.
+// ─── xKiro image generation (SenseNova U1.5 Lite) — async job API ───
+// QA 28/9: xKiro POST /v1/images/generations → 202 job → GET /v1/images/generations/{id}
+// tới status=succeeded → data[0].url (cdn.xkiro.com). Key đọc từ DB (khoa_api, 'xkiro').
 async function generateImageXkiro(prompt) {
   try {
     const row = await new Promise((resolve) => {
       db.get("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = 'xkiro' AND gia_tri_khoa IS NOT NULL AND TRIM(gia_tri_khoa) <> '' LIMIT 1", [], (e, r) => resolve(r));
     });
-    if (!row) return { success: false, error: 'KhÃ´ng cÃ³ key xkiro trong DB' };
+    if (!row) return { success: false, error: 'Không có key xkiro trong DB' };
     let key = '';
     try { key = decryptKey(row.gia_tri_khoa).trim(); } catch (e) { key = ''; }
-    if (!key) return { success: false, error: 'Giáº£i mÃ£ key xkiro tháº¥t báº¡i' };
+    if (!key) return { success: false, error: 'Giải mã key xkiro thất bại' };
     const MODEL = 'sensenova/sensenova-u1.5-lite';
     const create = await fetch('https://api.xkiro.com/v1/images/generations', {
       method: 'POST',
@@ -3882,7 +3882,7 @@ async function generateImageXkiro(prompt) {
       return { success: false, error: `xKiro HTTP ${create.status}: ${String(JSON.stringify(job)).slice(0, 140)}` };
     }
     const id = job.id;
-    if (!id) return { success: false, error: 'xKiro khÃ´ng tráº£ job id' };
+    if (!id) return { success: false, error: 'xKiro không trả job id' };
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 4000));
       const st = await fetch(`https://api.xkiro.com/v1/images/generations/${id}`, {
@@ -3892,19 +3892,19 @@ async function generateImageXkiro(prompt) {
       if (!sd) continue;
       if (sd.status === 'succeeded' || sd.status === 'completed') {
         const url = (sd.data && sd.data[0] && sd.data[0].url) || sd.url;
-        if (!url) return { success: false, error: 'xKiro khÃ´ng tráº£ url áº£nh' };
+        if (!url) return { success: false, error: 'xKiro không trả url ảnh' };
         const img = await fetch(url, { signal: AbortSignal.timeout(60000) });
-        if (!img.ok) return { success: false, error: `Táº£i áº£nh xKiro HTTP ${img.status}` };
+        if (!img.ok) return { success: false, error: `Tải ảnh xKiro HTTP ${img.status}` };
         const mime = (img.headers.get('content-type') || 'image/png').split(';')[0];
         const buf = Buffer.from(await img.arrayBuffer());
-        if (!buf.length) return { success: false, error: 'áº¢nh xKiro rá»—ng' };
+        if (!buf.length) return { success: false, error: 'Ảnh xKiro rỗng' };
         return { success: true, image: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'xkiro' };
       }
       if (sd.status === 'failed' || sd.status === 'error') {
-        return { success: false, error: 'xKiro job tháº¥t báº¡i: ' + String(JSON.stringify(sd)).slice(0, 140) };
+        return { success: false, error: 'xKiro job thất bại: ' + String(JSON.stringify(sd)).slice(0, 140) };
       }
     }
-    return { success: false, error: 'xKiro timeout chá» áº£nh' };
+    return { success: false, error: 'xKiro timeout chờ ảnh' };
   } catch (e) {
     console.log('[generate-image] xKiro error:', e.message);
     return { success: false, error: e.message };
@@ -3913,7 +3913,7 @@ async function generateImageXkiro(prompt) {
 
 async function generateImageHF(prompt, size = 1024) {
   const token = (process.env.HF_TOKEN || '').trim();
-  if (!token) return { success: false, error: 'ChÆ°a cáº¥u hÃ¬nh HF_TOKEN' };
+  if (!token) return { success: false, error: 'Chưa cấu hình HF_TOKEN' };
   try {
     const r = await fetch('https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers', {
       method: 'POST',
@@ -3926,9 +3926,9 @@ async function generateImageHF(prompt, size = 1024) {
       return { success: false, error: `HF HTTP ${r.status}: ${String(t).slice(0, 140)}` };
     }
     const mime = (r.headers.get('content-type') || 'image/jpeg').split(';')[0];
-    if (!mime.startsWith('image/')) return { success: false, error: 'HF khÃ´ng tráº£ áº£nh' };
+    if (!mime.startsWith('image/')) return { success: false, error: 'HF không trả ảnh' };
     const buf = Buffer.from(await r.arrayBuffer());
-    if (!buf.length) return { success: false, error: 'HF tráº£ áº£nh rá»—ng' };
+    if (!buf.length) return { success: false, error: 'HF trả ảnh rỗng' };
     return { success: true, image: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'huggingface' };
   } catch (e) {
     console.log('[generate-image] HF error:', e.message);
@@ -3936,12 +3936,12 @@ async function generateImageHF(prompt, size = 1024) {
   }
 }
 
-// â”€â”€â”€ NVIDIA FLUX.1-dev (build.nvidia.com) â”€â”€â”€
-// QA 28/9: POST https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev â†’
-// HTTP 200, JSON { artifacts: [{ base64 }] } (áº£nh JPEG, Ä‘Ã´i khi PNG). Key Ä‘á»c tá»«
-// DB (khoa_api, 'nvidia', Ä‘Ã£ mÃ£ hÃ³a) â†’ fallback env NVIDIA_API_KEY. ÄÃ£ verify:
-// 3 key khÃ¡c nhau Ä‘á»u tráº£ áº£nh ~44-46KB; flux.1-schnell validate Ä‘Æ°á»£c nhÆ°ng
-// generation TREO vÃ´ háº¡n (>300s) nÃªn chá»‰ dÃ¹ng flux.1-dev.
+// ─── NVIDIA FLUX.1-dev (build.nvidia.com) ───
+// QA 28/9: POST https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev →
+// HTTP 200, JSON { artifacts: [{ base64 }] } (ảnh JPEG, đôi khi PNG). Key đọc từ
+// DB (khoa_api, 'nvidia', đã mã hóa) → fallback env NVIDIA_API_KEY. Đã verify:
+// 3 key khác nhau đều trả ảnh ~44-46KB; flux.1-schnell validate được nhưng
+// generation TREO vô hạn (>300s) nên chỉ dùng flux.1-dev.
 async function generateImageNvidia(prompt, size = 1024) {
   try {
     let key = '';
@@ -3950,7 +3950,7 @@ async function generateImageNvidia(prompt, size = 1024) {
     });
     if (row) { try { key = decryptKey(row.gia_tri_khoa).trim(); } catch (e) { key = ''; } }
     if (!key) key = (process.env.NVIDIA_API_KEY || '').trim();
-    if (!key) return { success: false, error: 'KhÃ´ng cÃ³ key NVIDIA (DB/env)' };
+    if (!key) return { success: false, error: 'Không có key NVIDIA (DB/env)' };
     const dim = Math.max(256, Math.min(1024, Number(size) || 1024));
     const r = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev', {
       method: 'POST',
@@ -3964,10 +3964,10 @@ async function generateImageNvidia(prompt, size = 1024) {
     }
     const data = await r.json().catch(() => null);
     const b64 = data && data.artifacts && data.artifacts[0] && data.artifacts[0].base64;
-    if (!b64) return { success: false, error: 'NVIDIA khÃ´ng tráº£ artifacts[0].base64' };
+    if (!b64) return { success: false, error: 'NVIDIA không trả artifacts[0].base64' };
     const buf = Buffer.from(b64, 'base64');
-    if (!buf.length) return { success: false, error: 'NVIDIA tráº£ áº£nh rá»—ng' };
-    // Nháº­n diá»‡n mime theo magic bytes (NVIDIA thÆ°á»ng tráº£ JPEG).
+    if (!buf.length) return { success: false, error: 'NVIDIA trả ảnh rỗng' };
+    // Nhận diện mime theo magic bytes (NVIDIA thường trả JPEG).
     const mime = (buf[0] === 0x89 && buf[1] === 0x50) ? 'image/png' : 'image/jpeg';
     return { success: true, image: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'nvidia' };
   } catch (e) {
@@ -3986,11 +3986,11 @@ async function generateImageFallback(prompt, size = 1024) {
   try {
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(String(prompt).slice(0, 800))}?width=${size}&height=${size}&nologo=true&model=flux`;
     const r = await fetch(url, { signal: AbortSignal.timeout(120000) });
-    if (!r.ok) return { success: false, error: `Provider dá»± phÃ²ng HTTP ${r.status}` };
+    if (!r.ok) return { success: false, error: `Provider dự phòng HTTP ${r.status}` };
     const mime = (r.headers.get('content-type') || 'image/jpeg').split(';')[0];
-    if (!mime.startsWith('image/')) return { success: false, error: 'Provider dá»± phÃ²ng khÃ´ng tráº£ áº£nh' };
+    if (!mime.startsWith('image/')) return { success: false, error: 'Provider dự phòng không trả ảnh' };
     const buf = Buffer.from(await r.arrayBuffer());
-    if (!buf.length) return { success: false, error: 'Provider dá»± phÃ²ng tráº£ áº£nh rá»—ng' };
+    if (!buf.length) return { success: false, error: 'Provider dự phòng trả ảnh rỗng' };
     return { success: true, image: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'pollinations' };
   } catch (e) {
     console.log('[generate-image] fallback error:', e.message);
@@ -4001,14 +4001,14 @@ async function generateImageFallback(prompt, size = 1024) {
 router.post('/generate-image', authMiddleware, async (req, res) => {
   const { prompt } = req.body;
   if (!prompt || !prompt.trim()) {
-    return res.json({ success: false, error: 'Vui lÃ²ng nháº­p mÃ´ táº£ áº£nh cáº§n táº¡o.' });
+    return res.json({ success: false, error: 'Vui lòng nhập mô tả ảnh cần tạo.' });
   }
   const cleanPrompt = prompt.trim().slice(0, 1000);
   try {
     const keyRow = await new Promise((resolve) => {
       db.get("SELECT gia_tri_khoa FROM khoa_api WHERE LOWER(ten_nha_cung_cap) = 'gemini'", [], (err, row) => resolve(row));
     });
-    // P1-12: key lÆ°u mÃ£ hÃ³a â€” pháº£i decryptKey; key rá»—ng thÃ¬ bÃ¡o chÆ°a cÃ i (khÃ´ng gá»i API vá»›i ciphertext)
+    // P1-12: key lưu mã hóa — phải decryptKey; key rỗng thì báo chưa cài (không gọi API với ciphertext)
     let gemKey = '';
     try {
       gemKey = keyRow && keyRow.gia_tri_khoa ? decryptKey(keyRow.gia_tri_khoa).trim() : '';
@@ -4017,7 +4017,7 @@ router.post('/generate-image', authMiddleware, async (req, res) => {
       gemKey = '';
     }
     if (!gemKey) {
-      // QA 18/9: khÃ´ng cÃ³ key Gemini â†’ thá»­ OpenRouter (image free) rá»“i tá»›i provider miá»…n phÃ­
+      // QA 18/9: không có key Gemini → thử OpenRouter (image free) rồi tới provider miễn phí
       const or1 = await generateImageOpenRouter(cleanPrompt);
       if (or1.success) return res.json(or1);
       const fb = await generateImageFallback(cleanPrompt);
@@ -4035,19 +4035,19 @@ router.post('/generate-image', authMiddleware, async (req, res) => {
     const data = await resp.json();
     if (!resp.ok) {
       const msg = data.error?.message || ('HTTP ' + resp.status);
-      // QA 17/9: 429 = háº¿t quota key free â†’ tá»± chuyá»ƒn provider áº£nh miá»…n phÃ­ thay vÃ¬
-      // tráº£ lá»—i cá»©ng (trÆ°á»›c Ä‘Ã¢y tÃ­nh nÄƒng táº¡o áº£nh cháº¿t háº³n khi quota Gemini cáº¡n).
+      // QA 17/9: 429 = hết quota key free → tự chuyển provider ảnh miễn phí thay vì
+      // trả lỗi cứng (trước đây tính năng tạo ảnh chết hẳn khi quota Gemini cạn).
       if (resp.status === 429 || resp.status === 503) {
-        // QA 18/9: háº¿t quota Gemini â†’ thá»­ OpenRouter (image free) trÆ°á»›c khi rÆ¡i provider miá»…n phÃ­
+        // QA 18/9: hết quota Gemini → thử OpenRouter (image free) trước khi rơi provider miễn phí
         const or2 = await generateImageOpenRouter(cleanPrompt);
         if (or2.success) return res.json(or2);
         const fb = await generateImageFallback(cleanPrompt);
         if (fb.success) return res.json(fb);
-        return res.json({ success: false, error: 'âš ï¸ Gemini háº¿t quota, OpenRouter vÃ  provider dá»± phÃ²ng cÅ©ng lá»—i (OR: ' + String(or2.error || '').slice(0, 80) + ' | FB: ' + String(fb.error || '').slice(0, 80) + ')' });
+        return res.json({ success: false, error: '⚠️ Gemini hết quota, OpenRouter và provider dự phòng cũng lỗi (OR: ' + String(or2.error || '').slice(0, 80) + ' | FB: ' + String(fb.error || '').slice(0, 80) + ')' });
       }
       const friendly = resp.status === 400
-        ? 'âš ï¸ Gemini tá»« chá»‘i ná»™i dung nÃ y (bá»™ lá»c an toÃ n). Vui lÃ²ng mÃ´ táº£ khÃ¡c.'
-        : (resp.status === 429 ? 'âš ï¸ Gemini Ä‘ang Táº M Háº¾T QUOTA (rate limit). Vui lÃ²ng thá»­ láº¡i sau vÃ i phÃºt.' : 'Lá»—i Gemini: ' + msg);
+        ? '⚠️ Gemini từ chối nội dung này (bộ lọc an toàn). Vui lòng mô tả khác.'
+        : (resp.status === 429 ? '⚠️ Gemini đang TẠM HẾT QUOTA (rate limit). Vui lòng thử lại sau vài phút.' : 'Lỗi Gemini: ' + msg);
       return res.json({ success: false, error: friendly });
     }
     const part = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
@@ -4055,7 +4055,7 @@ router.post('/generate-image', authMiddleware, async (req, res) => {
       const mime = part.inlineData.mimeType || 'image/png';
       return res.json({ success: true, image: `data:${mime};base64,${part.inlineData.data}`, mimeType: mime, provider: 'gemini' });
     }
-    // Gemini tráº£ rá»—ng (bá»™ lá»c/khoÃ¡ model) â†’ thá»­ OpenRouter rá»“i tá»›i Ä‘Æ°á»ng dá»± phÃ²ng
+    // Gemini trả rỗng (bộ lọc/khoá model) → thử OpenRouter rồi tới đường dự phòng
     const orEmpty = await generateImageOpenRouter(cleanPrompt);
     if (orEmpty.success) return res.json(orEmpty);
     const fbEmpty = await generateImageFallback(cleanPrompt);
@@ -4066,13 +4066,13 @@ router.post('/generate-image', authMiddleware, async (req, res) => {
     if (orErr.success) return res.json(orErr);
     const fb = await generateImageFallback(cleanPrompt);
     if (fb.success) return res.json(fb);
-    return res.json({ success: false, error: 'Lá»—i káº¿t ná»‘i Gemini: ' + e.message });
+    return res.json({ success: false, error: 'Lỗi kết nối Gemini: ' + e.message });
   }
 });
 
 
-// ========== RAG â€” Äá»ŒC & HIá»‚U FILE (PDF/Word/TXT) ==========
-// Upload file â†’ trÃ­ch xuáº¥t text â†’ vector hÃ³a â†’ AI tráº£ lá»i dá»±a trÃªn ná»™i dung file
+// ========== RAG — ĐỌC & HIỂU FILE (PDF/Word/TXT) ==========
+// Upload file → trích xuất text → vector hóa → AI trả lời dựa trên nội dung file
 const ragUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }
@@ -4080,15 +4080,15 @@ const ragUpload = multer({
 
 router.post('/documents/upload', authMiddleware, ragUpload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Vui lÃ²ng chá»n file Ä‘á»ƒ upload.' });
+    if (!req.file) return res.status(400).json({ error: 'Vui lòng chọn file để upload.' });
     const ext = (req.file.originalname.match(/\.(txt|md|csv|json|js|py|jsx|ts|tsx|html|css|sql|sh|xml|yml|yaml|ini|log|xlsx|pdf|docx)$/i) || [])[1];
-    if (!ext) return res.status(400).json({ error: 'Chá»‰ há»— trá»£: TXT, MD, CSV, JSON, XLSX, PDF, DOCX, code files... Vui lÃ²ng chá»n file khÃ¡c.' });
+    if (!ext) return res.status(400).json({ error: 'Chỉ hỗ trợ: TXT, MD, CSV, JSON, XLSX, PDF, DOCX, code files... Vui lòng chọn file khác.' });
     const result = await ragService.saveDocument(req.user.id, req.file.originalname, req.file.buffer);
     if (result.error) return res.status(400).json({ error: result.error });
     res.json({ success: true, ...result });
   } catch (e) {
     console.log('[RAG] upload error:', e.message);
-    res.status(500).json({ error: 'Lá»—i xá»­ lÃ½ file: ' + e.message });
+    res.status(500).json({ error: 'Lỗi xử lý file: ' + e.message });
   }
 });
 
@@ -4104,49 +4104,49 @@ router.get('/documents', authMiddleware, async (req, res) => {
 router.delete('/documents/:id', authMiddleware, async (req, res) => {
   try {
     const ok = await ragService.deleteDocument(req.user.id, req.params.id);
-    if (!ok) return res.status(404).json({ error: 'KhÃ´ng tÃ¬m tháº¥y tÃ i liá»‡u.' });
+    if (!ok) return res.status(404).json({ error: 'Không tìm thấy tài liệu.' });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ========== CHáº Y CODE TRONG CHAT (sandbox, ADMIN ONLY â€” P0-01) ==========
+// ========== CHẠY CODE TRONG CHAT (sandbox, ADMIN ONLY — P0-01) ==========
 router.post('/exec-code', [authMiddleware, adminMiddleware], async (req, res) => {
   try {
     const { language, code } = req.body;
-    if (!code || !String(code).trim()) return res.status(400).json({ error: 'Code trá»‘ng.' });
+    if (!code || !String(code).trim()) return res.status(400).json({ error: 'Code trống.' });
     const { runCode } = require('../services/codeRunner');
     const result = await runCode(language, code);
     res.json({ success: true, ...result });
   } catch (e) {
-    res.status(500).json({ error: 'Lá»—i cháº¡y code: ' + e.message });
+    res.status(500).json({ error: 'Lỗi chạy code: ' + e.message });
   }
 });
 
-// ========== EXPORT Há»˜I THOáº I (TXT / DOCX) ==========
+// ========== EXPORT HỘI THOẠI (TXT / DOCX) ==========
 router.get('/conversations/:id/export', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    // P1-09: cháº·n IDOR â€” chá»‰ chá»§ sá»Ÿ há»¯u (hoáº·c admin) má»›i Ä‘Æ°á»£c export
+    // P1-09: chặn IDOR — chỉ chủ sở hữu (hoặc admin) mới được export
     const ownerErr = await assertConvOwner(id, req);
     if (ownerErr) return res.status(ownerErr.status).json({ error: ownerErr.error });
     const fmt = (req.query.format || 'txt').toLowerCase();
     const conv = await new Promise((resolve) => db.get('SELECT tieu_de FROM cuoc_hoi_thoai WHERE ma_hoi_thoai = ?', [id], (e, r) => resolve(r)));
     const msgs = await new Promise((resolve) => db.all("SELECT vai_tro, noi_dung, ngay_gui FROM tin_nhan WHERE ma_hoi_thoai = ? ORDER BY ngay_gui ASC", [id], (e, r) => resolve(r || [])));
-    if (!msgs.length) return res.status(404).json({ error: 'KhÃ´ng cÃ³ tin nháº¯n trong há»™i thoáº¡i.' });
-    const title = (conv && conv.tieu_de) || 'Há»™i thoáº¡i';
-    const lines = msgs.map(m => `[${(m.vai_tro === 'user' ? 'Báº¡n' : 'Rexi')} - ${(m.ngay_gui || '').substring(0, 19)}]\n${m.noi_dung}\n`);
-    const text = `Há»˜I THOáº I: ${title}\n${'='.repeat(40)}\n\n` + lines.join('\n');
+    if (!msgs.length) return res.status(404).json({ error: 'Không có tin nhắn trong hội thoại.' });
+    const title = (conv && conv.tieu_de) || 'Hội thoại';
+    const lines = msgs.map(m => `[${(m.vai_tro === 'user' ? 'Bạn' : 'Rexi')} - ${(m.ngay_gui || '').substring(0, 19)}]\n${m.noi_dung}\n`);
+    const text = `HỘI THOẠI: ${title}\n${'='.repeat(40)}\n\n` + lines.join('\n');
     if (fmt === 'docx') {
       const { Document, Packer, Paragraph } = require('docx');
       const doc = new Document({
         sections: [{
           children: [
-            new Paragraph({ text: `Há»˜I THOáº I: ${title}`, heading: 'Heading1' }),
+            new Paragraph({ text: `HỘI THOẠI: ${title}`, heading: 'Heading1' }),
             ...msgs.map(m => new Paragraph({
               children: [
-                { text: (m.vai_tro === 'user' ? 'ðŸ‘¤ Báº¡n' : 'ðŸ¤– Rexi') + ' (' + (m.ngay_gui || '').substring(0, 19) + '):\n', bold: true },
+                { text: (m.vai_tro === 'user' ? '👤 Bạn' : '🤖 Rexi') + ' (' + (m.ngay_gui || '').substring(0, 19) + '):\n', bold: true },
                 { text: String(m.noi_dung || '') }
               ]
             }))
@@ -4162,20 +4162,20 @@ router.get('/conversations/:id/export', authMiddleware, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="hoi_thoai_${id.substring(0, 8)}.txt"`);
     res.send(text);
   } catch (e) {
-    res.status(500).json({ error: 'Lá»—i export: ' + e.message });
+    res.status(500).json({ error: 'Lỗi export: ' + e.message });
   }
 });
 
-// ========== GIáº¢I MÃƒ QR / BARCODE TRONG áº¢NH (0 dependency) ==========
+// ========== GIẢI MÃ QR / BARCODE TRONG ẢNH (0 dependency) ==========
 router.post('/qr', async (req, res) => {
   try {
     const { name, base64 } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'base64 required' });
     let buf;
     try { buf = Buffer.from(String(base64), 'base64'); } catch { return res.status(400).json({ error: 'bad base64' }); }
-    if (!buf.length || buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: 'áº£nh trá»‘ng hoáº·c > 12MB' });
+    if (!buf.length || buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: 'ảnh trống hoặc > 12MB' });
     const isPng = buf.length > 8 && buf.readUInt32BE(0) === 0x89504e47;
-    if (!isPng && !/\.png$/i.test(String(name || ''))) return res.json({ ok: true, values: [], note: 'chá»‰ há»— trá»£ PNG' });
+    if (!isPng && !/\.png$/i.test(String(name || ''))) return res.json({ ok: true, values: [], note: 'chỉ hỗ trợ PNG' });
     const out = require('../utils/qr').decodeQR(buf);
     res.json(out);
   } catch (e) {
@@ -4183,16 +4183,16 @@ router.post('/qr', async (req, res) => {
   }
 });
 
-// ========== CHIA Sáºº Há»˜I THOáº I (link) ==========
+// ========== CHIA SẺ HỘI THOẠI (link) ==========
 router.post('/conversations/:id/share', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    // P1-09: cháº·n IDOR â€” chá»‰ chá»§ sá»Ÿ há»¯u (hoáº·c admin) má»›i Ä‘Æ°á»£c táº¡o link chia sáº»
+    // P1-09: chặn IDOR — chỉ chủ sở hữu (hoặc admin) mới được tạo link chia sẻ
     const ownerErr = await assertConvOwner(id, req);
     if (ownerErr) return res.status(ownerErr.status).json({ error: ownerErr.error });
     const crypto = require('crypto');
     const token = crypto.randomBytes(6).toString('hex');
-    // P2-20(8): báº£ng chia_se_hoi_thoai Ä‘Ã£ táº¡o á»Ÿ init-db.js â€” khÃ´ng CREATE á»Ÿ Ä‘Ã¢y ná»¯a
+    // P2-20(8): bảng chia_se_hoi_thoai đã tạo ở init-db.js — không CREATE ở đây nữa
     await new Promise((resolve) => db.run('INSERT INTO chia_se_hoi_thoai (ma_chia_se, ma_hoi_thoai) VALUES (?, ?)', [token, id], resolve));
     res.json({ success: true, share_token: token, share_url: `/api/services/share/${token}` });
   } catch (e) {
@@ -4200,12 +4200,12 @@ router.post('/conversations/:id/share', authMiddleware, async (req, res) => {
   }
 });
 
-// Public â€” xem há»™i thoáº¡i chia sáº» (khÃ´ng cáº§n Ä‘Äƒng nháº­p)
+// Public — xem hội thoại chia sẻ (không cần đăng nhập)
 router.get('/share/:token', async (req, res) => {
   try {
     const { token } = req.params;
     const row = await new Promise((resolve) => db.get('SELECT ma_hoi_thoai FROM chia_se_hoi_thoai WHERE ma_chia_se = ?', [token], (e, r) => resolve(r)));
-    if (!row) return res.status(404).json({ error: 'Link chia sáº» khÃ´ng tá»“n táº¡i hoáº·c Ä‘Ã£ háº¿t háº¡n.' });
+    if (!row) return res.status(404).json({ error: 'Link chia sẻ không tồn tại hoặc đã hết hạn.' });
     const msgs = await new Promise((resolve) => db.all("SELECT vai_tro, noi_dung, ngay_gui FROM tin_nhan WHERE ma_hoi_thoai = ? ORDER BY ngay_gui ASC", [row.ma_hoi_thoai], (e, r) => resolve(r || [])));
     res.json({ success: true, messages: msgs });
   } catch (e) {
@@ -4213,7 +4213,7 @@ router.get('/share/:token', async (req, res) => {
   }
 });
 
-// ========== THá»NG KÃŠ CÃ NHÃ‚N ==========
+// ========== THỐNG KÊ CÁ NHÂN ==========
 router.get('/stats/me', authMiddleware, async (req, res) => {
   try {
     const uid = req.user ? req.user.id : 'guest';
@@ -4228,13 +4228,13 @@ router.get('/stats/me', authMiddleware, async (req, res) => {
   }
 });
 
-// ========== NHáº®C VIá»†C THÃ”NG MINH ==========
-// P2-20(8): báº£ng lich_nhac/thong_bao Ä‘Ã£ táº¡o á»Ÿ init-db.js â€” bá» IIFE CREATE ráº£i rÃ¡c.
+// ========== NHẮC VIỆC THÔNG MINH ==========
+// P2-20(8): bảng lich_nhac/thong_bao đã tạo ở init-db.js — bỏ IIFE CREATE rải rác.
 
 router.post('/reminders', authMiddleware, async (req, res) => {
   try {
     const { noi_dung, thoi_gian } = req.body;
-    if (!noi_dung || !thoi_gian) return res.status(400).json({ error: 'Thiáº¿u ná»™i dung hoáº·c thá»i gian nháº¯c.' });
+    if (!noi_dung || !thoi_gian) return res.status(400).json({ error: 'Thiếu nội dung hoặc thời gian nhắc.' });
     const crypto = require('crypto');
     const ma = crypto.randomUUID();
     await new Promise((resolve) => db.run('INSERT INTO lich_nhac (ma_nhac, ma_nguoi_dung, noi_dung, thoi_gian) VALUES (?, ?, ?, ?)', [ma, req.user.id, noi_dung, thoi_gian], resolve));
@@ -4271,8 +4271,8 @@ router.get('/notifications', authMiddleware, async (req, res) => {
   }
 });
 
-// ========== NHáº¬T KÃ HOáº T Äá»˜NG (báº£o máº­t) ==========
-// P2-20(8): báº£ng nhat_ky Ä‘Ã£ táº¡o á»Ÿ init-db.js â€” bá» IIFE CREATE ráº£i rÃ¡c.
+// ========== NHẬT KÝ HOẠT ĐỘNG (bảo mật) ==========
+// P2-20(8): bảng nhat_ky đã tạo ở init-db.js — bỏ IIFE CREATE rải rác.
 
 router.get('/admin/logs', [authMiddleware, adminMiddleware], async (req, res) => {
   try {
@@ -4283,12 +4283,12 @@ router.get('/admin/logs', [authMiddleware, adminMiddleware], async (req, res) =>
   }
 });
 
-// ========== OPENSHORTS â€” cáº¯t video dÃ i thÃ nh Shorts (hosted api.openshorts.app, quota free 20 phÃºt/thÃ¡ng) ==========
+// ========== OPENSHORTS — cắt video dài thành Shorts (hosted api.openshorts.app, quota free 20 phút/tháng) ==========
 const OPENSHORTS_BASE = 'https://api.openshorts.app';
 
 async function openShortsFetch(pathname, init = {}) {
   const key = process.env.OPENSHORTS_API_KEY;
-  if (!key) { const err = new Error('Server chÆ°a cáº¥u hÃ¬nh OPENSHORTS_API_KEY'); err.status = 503; throw err; }
+  if (!key) { const err = new Error('Server chưa cấu hình OPENSHORTS_API_KEY'); err.status = 503; throw err; }
   const r = await fetch(OPENSHORTS_BASE + pathname, {
     ...init,
     headers: { 'Authorization': 'Bearer ' + key, ...(init.headers || {}) }
@@ -4303,11 +4303,11 @@ async function openShortsFetch(pathname, init = {}) {
   return data;
 }
 
-// Gá»­i job cáº¯t video (chá»‰ nháº­n URL YouTube â€” hosted plan khÃ´ng cho upload qua proxy)
-router.post('/openshorts/process', authMiddleware, rateLimit({ windowMs: 3600000, max: 5, message: 'Báº¡n Ä‘Ã£ gá»­i 5 job OpenShorts trong giá» nÃ y. Quota miá»…n phÃ­ cÃ³ háº¡n, Ä‘á»£i chÃºt nhÃ©.' }), async (req, res) => {
+// Gửi job cắt video (chỉ nhận URL YouTube — hosted plan không cho upload qua proxy)
+router.post('/openshorts/process', authMiddleware, rateLimit({ windowMs: 3600000, max: 5, message: 'Bạn đã gửi 5 job OpenShorts trong giờ này. Quota miễn phí có hạn, đợi chút nhé.' }), async (req, res) => {
   try {
     const { url, target_clips, captions, auto_hook, force_low_quality, layouts, clip_min_seconds, clip_max_seconds, max_minutes } = req.body || {};
-    if (!url || !/^https?:\/\//i.test(String(url))) return res.status(400).json({ error: 'Thiáº¿u URL video há»£p lá»‡ (https://...)' });
+    if (!url || !/^https?:\/\//i.test(String(url))) return res.status(400).json({ error: 'Thiếu URL video hợp lệ (https://...)' });
     const body = { url: String(url), acknowledged: 'true' };
     if (target_clips) body.target_clips = String(target_clips);
     if (captions != null) body.captions = String(captions);
@@ -4328,7 +4328,7 @@ router.post('/openshorts/process', authMiddleware, rateLimit({ windowMs: 3600000
   }
 });
 
-// Tráº¡ng thÃ¡i job + danh sÃ¡ch clip Ä‘Ã£ cáº¯t
+// Trạng thái job + danh sách clip đã cắt
 router.get('/openshorts/status/:jobId', authMiddleware, rateLimit({ windowMs: 60000, max: 60 }), async (req, res) => {
   try {
     const data = await openShortsFetch('/api/status/' + encodeURIComponent(req.params.jobId));
@@ -4338,7 +4338,7 @@ router.get('/openshorts/status/:jobId', authMiddleware, rateLimit({ windowMs: 60
   }
 });
 
-// Quota / thÃ´ng tin gÃ³i hiá»‡n táº¡i (sá»‘ phÃºt cÃ²n láº¡i...)
+// Quota / thông tin gói hiện tại (số phút còn lại...)
 router.get('/openshorts/quota', authMiddleware, async (req, res) => {
   try {
     const me = await openShortsFetch('/api/me');
@@ -4348,7 +4348,7 @@ router.get('/openshorts/quota', authMiddleware, async (req, res) => {
   }
 });
 
-// â•â•â•â•â•â•â•â•â•â•â• VIDEO EDIT (FFmpeg) â€” dá»±ng/sá»­a video (tab + agent) â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════ VIDEO EDIT (FFmpeg) — dựng/sửa video (tab + agent) ═══════════
 const { videoEdit, TEMP_DIR: VIDEO_TEMP_DIR } = require('../services/videoEdit');
 
 function tokenFromQuery(req, res, next) {
@@ -4368,42 +4368,42 @@ router.post('/video/edit', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /services/video/file/:name â€” táº£i file Ä‘Ã£ edit (Bearer header hoáº·c ?token=)
+// GET /services/video/file/:name — tải file đã edit (Bearer header hoặc ?token=)
 router.get('/video/file/:name', tokenFromQuery, authMiddleware, (req, res) => {
   const name = path.basename(req.params.name);
   const fp = path.join(VIDEO_TEMP_DIR, name);
-  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'KhÃ´ng tháº¥y file' });
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Không thấy file' });
   res.sendFile(fp);
 });
 
-// â•â•â•â•â•â•â•â•â•â•â• OPENCUT BRIDGE (extension polling) â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════ OPENCUT BRIDGE (extension polling) ═══════════
 const opencutBridge = require('../services/opencutBridge');
 
-// Extension poll láº¥y lá»‡nh (vÃ  bÃ¡o cÃ²n sá»‘ng + cÃ³ tab OpenCut)
+// Extension poll lấy lệnh (và báo còn sống + có tab OpenCut)
 router.post('/opencut-bridge/poll', tokenFromQuery, authMiddleware, (req, res) => {
   res.json({ commands: opencutBridge.poll(req.body && req.body.hasTab) });
 });
-// Extension tráº£ káº¿t quáº£
+// Extension trả kết quả
 router.post('/opencut-bridge/result', tokenFromQuery, authMiddleware, (req, res) => {
   res.json(opencutBridge.submitResult(req.body || {}));
 });
-// Tráº¡ng thÃ¡i cáº§u ná»‘i
+// Trạng thái cầu nối
 router.get('/opencut-bridge/status', tokenFromQuery, authMiddleware, (req, res) => {
   res.json(opencutBridge.status());
 });
-// Chá»¥p mÃ n hÃ¬nh OpenCut (qua extension) â€” tráº£ dataURL PNG
+// Chụp màn hình OpenCut (qua extension) — trả dataURL PNG
 router.post('/opencut-bridge/shot', tokenFromQuery, authMiddleware, async (req, res) => {
   const r = await opencutBridge.enqueue('screenshot', {}, 20000);
   res.json(r);
 });
-// Agent AN TOÃ€N cho OpenCut â€” CHá»ˆ má»Ÿ tool opencut_act, cho Má»ŒI user Ä‘Ã£ Ä‘Äƒng nháº­p (khÃ´ng cáº§n admin)
+// Agent AN TOÀN cho OpenCut — CHỈ mở tool opencut_act, cho MỌI user đã đăng nhập (không cần admin)
 router.post('/opencut-bridge/ask', authMiddleware, async (req, res) => {
   try {
     const { message } = req.body || {};
-    if (!message || !String(message).trim()) return res.status(400).json({ error: 'Thiáº¿u message' });
+    if (!message || !String(message).trim()) return res.status(400).json({ error: 'Thiếu message' });
     const { runInternalAgent } = require('../services/internalAgent');
     const result = await runInternalAgent(
-      `Báº¡n há»— trá»£ ngÆ°á»i dÃ¹ng Ä‘iá»u khiá»ƒn tab OpenCut cá»§a CHÃNH Há»Œ qua tool opencut_act (extension cá»§a há» Ä‘Ã£ káº¿t ná»‘i vá»›i server). Thá»±c hiá»‡n yÃªu cáº§u sau: ${String(message).trim()}`,
+      `Bạn hỗ trợ người dùng điều khiển tab OpenCut của CHÍNH HỌ qua tool opencut_act (extension của họ đã kết nối với server). Thực hiện yêu cầu sau: ${String(message).trim()}`,
       { allowedTools: ['opencut_act'] }
     );
     res.json(result);
@@ -4412,11 +4412,11 @@ router.post('/opencut-bridge/ask', authMiddleware, async (req, res) => {
   }
 });
 
-// Upload file nguá»“n cho dá»±ng video (lÆ°u temp, tráº£ path server dÃ¹ng cho /video/edit)
+// Upload file nguồn cho dựng video (lưu temp, trả path server dùng cho /video/edit)
 const videoUpload = multer({ dest: path.join(__dirname, '..', '..', 'temp'), limits: { fileSize: 200 * 1024 * 1024 } });
 router.post('/video/upload', authMiddleware, videoUpload.single('file'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'ChÆ°a cÃ³ file' });
+    if (!req.file) return res.status(400).json({ error: 'Chưa có file' });
     const ext = (path.extname(req.file.originalname) || '.mp4').toLowerCase();
     const dest = path.join(VIDEO_TEMP_DIR, 'up_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + ext);
     try { fs.renameSync(req.file.path, dest); } catch (e) { fs.copyFileSync(req.file.path, dest); try { fs.unlinkSync(req.file.path); } catch (e2) {} }
@@ -4427,4 +4427,3 @@ router.post('/video/upload', authMiddleware, videoUpload.single('file'), (req, r
 });
 
 module.exports = router;
-
